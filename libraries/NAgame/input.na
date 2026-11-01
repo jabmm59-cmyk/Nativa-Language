@@ -2,8 +2,8 @@
 
 classify Entrada: (
     df __init__(urself): (
-        NA imp impbuild
-        urself._backend = impbuild.NAgame()
+        NA de NAgame imp NAgame as backend_mod
+        urself._backend = backend_mod.NAgame()
     )
 
     #Teclado#

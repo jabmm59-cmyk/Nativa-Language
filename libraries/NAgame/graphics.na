@@ -14,8 +14,8 @@ classify Janela: (
 
     df iniciar(urself): (
         #Inicializa backend#
-        NA imp impbuild
-        urself._backend = impbuild.NAgame(urself.largura, urself.altura, urself.titulo)
+        NA de NAgame imp NAgame as backend_mod
+        urself._backend = backend_mod.NAgame(urself.largura, urself.altura, urself.titulo)
         urself._backend.iniciar()
         urself._iniciado = True
         urself._rodando = True

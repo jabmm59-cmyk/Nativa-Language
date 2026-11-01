@@ -134,10 +134,9 @@ classify Fisica: (
     #Raycast#
     df raio(urself, x, y, angulo, distancia): (
         #Retorna primeiro corpo atingido ou None#
-        NA imp impbuild
-        mods = impbuild.importar_comuns("math")
-        dx = mods["math"].cos(angulo)
-        dy = mods["math"].sin(angulo)
+        NA de python.math imp cos, sin
+        dx = cos(angulo)
+        dy = sin(angulo)
 
         para passo em rang(0, int(distancia)): (
             px = x + dx * passo
