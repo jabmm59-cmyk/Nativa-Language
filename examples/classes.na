@@ -1,0 +1,24 @@
+df sum(a, b): (
+    ret a + b
+)
+
+result = sum(10, 20)
+shw result
+
+classify Person: (
+    df __init__(urself, name): (
+        urself.name = name
+    )
+
+    df greet(urself): (
+        shw "Olá, {urself.name}"
+    )
+)
+
+person = Person("João")
+person.greet()
+
+numbers = [1, 2, 3]
+numbers[0] = 99
+data = {"name": "João", "age": 12}
+shw numbers, data["name"], len(data)

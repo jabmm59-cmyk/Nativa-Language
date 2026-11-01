@@ -1,0 +1,139 @@
+#NAgame.interface - Interface do usuario (UI)#
+
+classify ElementoUI: (
+    df __init__(urself, x, y, largura, altura): (
+        urself.x = x
+        urself.y = y
+        urself.largura = largura
+        urself.altura = altura
+        urself.visivel = True
+        urself.ativo = True
+    )
+
+    df contem_ponto(urself, px, py): (
+        ret (px >= urself.x e px <= urself.x + urself.largura e py >= urself.y e py <= urself.y + urself.altura)
+    )
+
+    df desenhar(urself, tela): (
+        #Sobrescrever#
+        pass
+    )
+)
+
+
+classify Botao(ElementoUI): (
+    df __init__(urself, x, y, largura, altura, texto="", acao=None): (
+        super().__init__(x, y, largura, altura)
+        urself.texto = texto
+        urself.acao = acao
+        urself.cor_normal = [100, 100, 100]
+        urself.cor_hover = [150, 150, 150]
+        urself.cor_pressed = [200, 200, 200]
+        urself.estado = "normal"
+    )
+
+    df atualizar(urself, mouse_x, mouse_y, clicado): (
+        se nao urself.ativo: (
+            ret
+        )
+        se urself.contem_ponto(mouse_x, mouse_y): (
+            se clicado: (
+                urself.estado = "pressed"
+                se urself.acao: (
+                    urself.acao()
+                )
+            ) senao: (
+                urself.estado = "hover"
+            )
+        ) senao: (
+            urself.estado = "normal"
+        )
+    )
+
+    df desenhar(urself, tela): (
+        se nao urself.visivel: (
+            ret
+        )
+        cor = urself.cor_normal
+        se urself.estado == "hover": (
+            cor = urself.cor_hover
+        )
+        se urself.estado == "pressed": (
+            cor = urself.cor_pressed
+        )
+
+        tela.retangulo(urself.x, urself.y, urself.largura, urself.altura, cor)
+        se urself.texto: (
+            tela.texto(urself.texto, urself.x + 10, urself.y + 10)
+        )
+    )
+)
+
+
+classify Painel(ElementoUI): (
+    df __init__(urself, x, y, largura, altura, cor=[50,50,50,200]): (
+        super().__init__(x, y, largura, altura)
+        urself.cor = cor
+        urself.elementos = []
+    )
+
+    df add(urself, elemento): (
+        urself.elementos.append(elemento)
+    )
+
+    df atualizar(urself, mouse_x, mouse_y, clicado): (
+        para el em urself.elementos: (
+            el.atualizar(mouse_x, mouse_y, clicado)
+        )
+    )
+
+    df desenhar(urself, tela): (
+        se nao urself.visivel: (
+            ret
+        )
+        tela.retangulo(urself.x, urself.y, urself.largura, urself.altura, urself.cor, True)
+        para el em urself.elementos: (
+            el.desenhar(tela)
+        )
+    )
+)
+
+
+classify Menu: (
+    df __init__(urself, x, y): (
+        urself.x = x
+        urself.y = y
+        urself.opcoes = []
+        urself.selecionado = 0
+        urself.aberto = False
+    )
+
+    df add_opcao(urself, texto, acao): (
+        urself.opcoes.append({"texto": texto, "acao": acao})
+    )
+
+    df abrir(urself): (
+        urself.aberto = True
+        urself.selecionado = 0
+    )
+
+    df fechar(urself): (
+        urself.aberto = False
+    )
+
+    df navegar(urself, direcao): (
+        se nao urself.aberto: (
+            ret
+        )
+        urself.selecionado = (urself.selecionado + direcao) % len(urself.opcoes)
+    )
+
+    df selecionar(urself): (
+        se urself.aberto e urself.opcoes: (
+            op = urself.opcoes[urself.selecionado]
+            se op["acao"]: (
+                op["acao"]()
+            )
+        )
+    )
+)

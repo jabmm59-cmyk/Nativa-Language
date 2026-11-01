@@ -1,0 +1,48 @@
+#NAgame.input - Sistema de entrada#
+
+classify Entrada: (
+    df __init__(urself): (
+        NA imp impbuild
+        urself._backend = impbuild.NAgame()
+    )
+
+    #Teclado#
+    df tecla(urself, nome): (
+        ret urself._backend.tecla(nome)
+    )
+
+    df tecla_pressionada(urself, nome): (
+        #Implementacao simplificada#
+        ret urself.tecla(nome)
+    )
+
+    df tecla_solta(urself, nome): (
+        ret nao urself.tecla(nome)
+    )
+
+    #Mouse#
+    df mouse_pos(urself): (
+        #Implementacao via backend#
+        ret [0, 0]
+    )
+
+    df mouse_clicado(urself, botao=1): (
+        ret False
+    )
+
+    #Controle Gamepad#
+    df controle_conectado(urself, indice=0): (
+        ret False
+    )
+
+    df controle_eixo(urself, eixo, indice=0): (
+        ret 0.0
+    )
+
+    df controle_botao(urself, botao, indice=0): (
+        ret False
+    )
+)
+
+#Instancia global#
+entrada = Entrada()

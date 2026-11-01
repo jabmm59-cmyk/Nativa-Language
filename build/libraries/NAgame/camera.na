@@ -1,0 +1,48 @@
+#NAgame.camera - Sistema de camera#
+
+classify Camera: (
+    df __init__(urself, largura_tela, altura_tela): (
+        urself.x = 0
+        urself.y = 0
+        urself.zoom = 1.0
+        urself.rotacao = 0
+        urself.largura_tela = largura_tela
+        urself.altura_tela = altura_tela
+        urself.alvo = None
+        urself.suavidade = 0.1
+    )
+
+    df seguir(urself, alvo): (
+        urself.alvo = alvo
+    )
+
+    df atualizar(urself, dt): (
+        se urself.alvo: (
+            #Calcular posicao desejada (centralizar alvo)#
+            dx = (urself.alvo.x + urself.alvo.largura / 2) - urself.largura_tela / (2 * urself.zoom)
+            dy = (urself.alvo.y + urself.alvo.altura / 2) - urself.altura_tela / (2 * urself.zoom)
+
+            #Suavizar movimento#
+            urself.x = urself.x + (dx - urself.x) * urself.suavidade
+            urself.y = urself.y + (dy - urself.y) * urself.suavidade
+        )
+    )
+
+    df aplicar(urself, tela): (
+        #Aplicar transformacao da camera#
+        #Nota: implementacao completa requer backend com transformacoes#
+        pass
+    )
+
+    df mundo_para_tela(urself, x, y): (
+        ret [int((x - urself.x) * urself.zoom), int((y - urself.y) * urself.zoom)]
+    )
+
+    df tela_para_mundo(urself, x, y): (
+        ret [int(x / urself.zoom + urself.x), int(y / urself.zoom + urself.y)]
+    )
+
+    df definir_zoom(urself, zoom): (
+        urself.zoom = max(0.1, min(5.0, zoom))
+    )
+)

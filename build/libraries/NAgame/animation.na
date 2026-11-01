@@ -1,0 +1,79 @@
+#NAgame.animation - Sistema de animacao#
+
+classify Animacao: (
+    df __init__(urself, frames, velocidade=100, loop=True): (
+        urself.frames = frames
+        urself.velocidade = velocidade
+        urself.loop = loop
+        urself.frame_atual = 0
+        urself.tempo = 0
+        urself.terminou = False
+    )
+
+    df atualizar(urself, dt): (
+        se urself.terminou: (
+            ret
+        )
+        urself.tempo = urself.tempo + dt * 1000
+        se urself.tempo >= urself.velocidade: (
+            urself.tempo = 0
+            urself.frame_atual = urself.frame_atual + 1
+            se urself.frame_atual >= len(urself.frames): (
+                se urself.loop: (
+                    urself.frame_atual = 0
+                ) senao: (
+                    urself.frame_atual = len(urself.frames) - 1
+                    urself.terminou = True
+                )
+            )
+        )
+    )
+
+    df get_frame(urself): (
+        se urself.frames: (
+            ret urself.frames[urself.frame_atual]
+        )
+        ret None
+    )
+
+    df reiniciar(urself): (
+        urself.frame_atual = 0
+        urself.tempo = 0
+        urself.terminou = False
+    )
+)
+
+
+classify Animador: (
+    df __init__(urself): (
+        urself.animacoes = {}
+        urself.atual = None
+    )
+
+    df add(urself, nome, animacao): (
+        urself.animacoes[nome] = animacao
+    )
+
+    df tocar(urself, nome): (
+        se nome em urself.animacoes: (
+            se urself.atual: (
+                urself.atual.reiniciar()
+            )
+            urself.atual = urself.animacoes[nome]
+            urself.atual.reiniciar()
+        )
+    )
+
+    df atualizar(urself, dt): (
+        se urself.atual: (
+            urself.atual.atualizar(dt)
+        )
+    )
+
+    df get_frame(urself): (
+        se urself.atual: (
+            ret urself.atual.get_frame()
+        )
+        ret None
+    )
+)

@@ -1,0 +1,6 @@
+# Primeiro programa em Nativa #
+name = "  JOÃO  "
+name = name.dr
+shw "Hello, World!"
+shw "Olá", "Mundo", sep = "-"
+shw "Olá, {name}! Resultado: {10 + 20}"

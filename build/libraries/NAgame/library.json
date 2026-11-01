@@ -1,0 +1,18 @@
+{
+  "name": "NAgame",
+  "version": "1.0.0",
+  "built_at": "2026-11-01T19:58:19.584910",
+  "files": [
+    "animation.na",
+    "audio.na",
+    "camera.na",
+    "input.na",
+    "utils.na",
+    "particles.na",
+    "physics.na",
+    "interface.na",
+    "graphics.na",
+    "__init__.na"
+  ],
+  "dependencies": []
+}

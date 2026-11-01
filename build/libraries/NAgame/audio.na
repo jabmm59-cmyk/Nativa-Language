@@ -1,0 +1,54 @@
+#NAgame.audio - Sistema de audio#
+
+classify Audio: (
+    df __init__(urself): (
+        NA imp impbuild
+        urself._backend = impbuild.NAgame()
+        urself._musicas = {}
+        urself._sons = {}
+    )
+
+    #Musica#
+    df carregar_msc(urself, nome, arquivo): (
+        urself._musicas[nome] = arquivo
+    )
+
+    df tocar_msc(urself, nome, loop=True, volume=1.0): (
+        arquivo = urself._musicas.get(nome)
+        se arquivo: (
+            urself._backend.playmsc(arquivo, loop, volume)
+        )
+    )
+
+    df pausar_msc(urself): (
+        urself._backend.pausemsc()
+    )
+
+    df parar_msc(urself): (
+        urself._backend.stopmsc()
+    )
+
+    df vol_msc(urself, valor): (
+        urself._backend.volmsc(valor)
+    )
+
+    #Efeitos sonoros#
+    df carregar_snd(urself, nome, arquivo): (
+        urself._sons[nome] = arquivo
+    )
+
+    df tocar_snd(urself, nome, volume=1.0): (
+        arquivo = urself._sons.get(nome)
+        se arquivo: (
+            urself._backend.playsnd(arquivo, volume)
+        )
+    )
+
+    #Controle#
+    df vol_snd(urself, valor): (
+        urself._backend.vlint(valor)
+    )
+)
+
+#Instancia global#
+audio = Audio()

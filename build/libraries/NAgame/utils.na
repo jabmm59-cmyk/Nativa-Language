@@ -1,0 +1,76 @@
+#NAgame.utils - Utilitarios#
+
+#Aleatoriedade#
+df rnd(min=0, max=1): (
+    NA imp impbuild
+    mods = impbuild.importar_comuns("random")
+    ret mods["random"].uniform(min, max)
+)
+
+df rnd_int(min, max): (
+    NA imp impbuild
+    mods = impbuild.importar_comuns("random")
+    ret mods["random"].randint(min, max)
+)
+
+df escolher(lista): (
+    NA imp impbuild
+    mods = impbuild.importar_comuns("random")
+    ret mods["random"].choice(lista)
+)
+
+#Matematica#
+df dist(x1, y1, x2, y2): (
+    NA imp impbuild
+    mods = impbuild.importar_comuns("math")
+    dx = x2 - x1
+    dy = y2 - y1
+    ret mods["math"].sqrt(dx * dx + dy * dy)
+)
+
+df angulo(x1, y1, x2, y2): (
+    NA imp impbuild
+    mods = impbuild.importar_comuns("math")
+    ret mods["math"].atan2(y2 - y1, x2 - x1)
+)
+
+df lerp(a, b, t): (
+    ret a + (b - a) * t
+)
+
+df clamp(valor, min_v, max_v): (
+    se valor < min_v: (
+        ret min_v
+    )
+    se valor > max_v: (
+        ret max_v
+    )
+    ret valor
+)
+
+#Tempo#
+df agora(): (
+    NA imp impbuild
+    mods = impbuild.importar_comuns("time")
+    ret mods["time"].time()
+)
+
+#Debug#
+df debug(msg): (
+    shw "[DEBUG]", msg
+)
+
+df log(msg): (
+    shw "[LOG]", msg
+)
+
+#Cores#
+branco = [255, 255, 255]
+preto = [0, 0, 0]
+vermelho = [255, 0, 0]
+verde = [0, 255, 0]
+azul = [0, 0, 255]
+amarelo = [255, 255, 0]
+ciano = [0, 255, 255]
+magenta = [255, 0, 255]
+cinza = [128, 128, 128]

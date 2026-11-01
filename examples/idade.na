@@ -1,0 +1,26 @@
+age = 12
+if age >= 18: (
+    shw "Maior de idade"
+)
+else if age >= 13: (
+    shw "Adolescente"
+)
+else: (
+    shw "Menor de idade"
+)
+
+x = 0
+while x < 3: (
+    shw x
+    x = x + 1
+)
+
+for x in rang(0, 10): (
+    if x == 2: (
+        continue
+    )
+    if x == 5: (
+        brk
+    )
+    shw x
+)

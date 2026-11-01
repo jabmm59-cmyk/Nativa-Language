@@ -1,0 +1,11 @@
+#NAgame - Biblioteca oficial de jogos da Nativa#
+#Versao 1.0.0#
+
+#Funcao principal para criar jogo#
+df jogo(titulo="Jogo NA", largura=800, altura=600): (
+    g = Janela(largura, altura, titulo)
+    ret g
+)
+
+#Exportar versao#
+versao = "1.0.0"

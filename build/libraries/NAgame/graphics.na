@@ -1,0 +1,151 @@
+#NAgame.graphics - Graficos 2D#
+
+#Janela principal#
+classify Janela: (
+    df __init__(urself, largura, altura, titulo="Jogo NA"): (
+        urself.largura = largura
+        urself.altura = altura
+        urself.titulo = titulo
+        urself._iniciado = False
+        urself._rodando = False
+        urself._cor_fundo = [0, 0, 0]
+        urself._sprites = []
+    )
+
+    df iniciar(urself): (
+        #Inicializa backend#
+        NA imp impbuild
+        urself._backend = impbuild.NAgame(urself.largura, urself.altura, urself.titulo)
+        urself._backend.iniciar()
+        urself._iniciado = True
+        urself._rodando = True
+    )
+
+    df rodar(urself, atualizar, desenhar): (
+        se nao urself._iniciado: (
+            urself.iniciar()
+        )
+        urself._backend.rodar(atualizar, desenhar)
+    )
+
+    df parar(urself): (
+        urself._rodando = False
+        urself._backend.parar()
+    )
+
+    #Cor de fundo#
+    df fundo(urself, r, g, b): (
+        urself._cor_fundo = [r, g, b]
+        urself._backend.limpar([r, g, b])
+    )
+
+    #Desenho basico#
+    df retangulo(urself, x, y, w, h, cor=[255,255,255], preenchido=True): (
+        urself._backend.retangulo(x, y, w, h, cor, preenchido)
+    )
+
+    df circ(urself, x, y, raio, cor=[255,255,255], preenchido=True): (
+        urself._backend.circ(x, y, raio, cor, preenchido)
+    )
+
+    df linha(urself, x1, y1, x2, y2, cor=[255,255,255], espessura=1): (
+        urself._backend.linha(x1, y1, x2, y2, cor, espessura)
+    )
+
+    df texto(urself, txt, x, y, tamanho=24, cor=[255,255,255]): (
+        urself._backend.texto(txt, x, y, tamanho, cor)
+    )
+
+    #Imagens#
+    df carregar_img(urself, caminho): (
+        ret urself._backend.img(caminho, 0, 0)
+    )
+
+    df desenhar_img(urself, img, x, y, largura=None, altura=None): (
+        urself._backend.img(img, x, y, largura, altura)
+    )
+
+    #Sprites#
+    df add_sprite(urself, sprite): (
+        urself._sprites.append(sprite)
+    )
+
+    df limpar_sprites(urself): (
+        urself._sprites = []
+    )
+
+    #Utilitarios#
+    df fps(urself): (
+        ret urself._backend.fps()
+    )
+
+    df tempo(urself): (
+        ret urself._backend.tempo()
+    )
+
+    df centralizar(urself, obj_w, obj_h): (
+        ret urself._backend.centralizar(obj_w, obj_h)
+    )
+)
+
+
+#Sprite base#
+classify Sprite: (
+    df __init__(urself, x=0, y=0, img=None): (
+        urself.x = x
+        urself.y = y
+        urself.img = img
+        urself.visivel = True
+        urself.rotacao = 0
+        urself.escala = 1.0
+        urself.alpha = 255
+    )
+
+    df desenhar(urself, tela): (
+        se urself.visivel e urself.img: (
+            tela.desenhar_img(urself.img, urself.x, urself.y)
+        )
+    )
+
+    df mover(urself, dx, dy): (
+        urself.x = urself.x + dx
+        urself.y = urself.y + dy
+    )
+
+    df pos(urself, x=None, y=None): (
+        se x != None: (
+            urself.x = x
+        )
+        se y != None: (
+            urself.y = y
+        )
+        ret [urself.x, urself.y]
+    )
+)
+
+
+#Sprite animado#
+classify SpriteAnimado(Sprite): (
+    df __init__(urself, x=0, y=0, frames=None, velocidade=10): (
+        super().__init__(x, y)
+        urself.frames = frames ou []
+        urself.frame_atual = 0
+        urself.velocidade = velocidade
+        urself.tempo_frame = 0
+        se urself.frames: (
+            urself.img = urself.frames[0]
+        )
+    )
+
+    df atualizar(urself, dt): (
+        se nao urself.frames: (
+            ret
+        )
+        urself.tempo_frame = urself.tempo_frame + dt * 1000
+        se urself.tempo_frame >= urself.velocidade: (
+            urself.tempo_frame = 0
+            urself.frame_atual = (urself.frame_atual + 1) % len(urself.frames)
+            urself.img = urself.frames[urself.frame_atual]
+        )
+    )
+)

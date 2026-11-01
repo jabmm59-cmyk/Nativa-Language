@@ -1,0 +1,73 @@
+#NAgame.particles - Sistema de particulas#
+
+classify Particula: (
+    df __init__(urself, x, y, vx=0, vy=0, cor=[255,255,255], vida=1.0, tamanho=4): (
+        urself.x = x
+        urself.y = y
+        urself.vx = vx
+        urself.vy = vy
+        urself.cor = cor
+        urself.vida_max = vida
+        urself.vida = vida
+        urself.tamanho = tamanho
+        urself.ativa = True
+    )
+
+    df atualizar(urself, dt): (
+        se nao urself.ativa: (
+            ret
+        )
+        urself.vida = urself.vida - dt
+        se urself.vida <= 0: (
+            urself.ativa = False
+            ret
+        )
+        urself.x = urself.x + urself.vx * dt
+        urself.y = urself.y + urself.vy * dt
+    )
+
+    df desenhar(urself, tela): (
+        se urself.ativa e urself.vida > 0: (
+            alpha = int(255 * (urself.vida / urself.vida_max))
+            cor_com_alpha = [urself.cor[0], urself.cor[1], urself.cor[2], alpha]
+            tela.circ(int(urself.x), int(urself.y), urself.tamanho, cor_com_alpha)
+        )
+    )
+)
+
+
+classify EmissorParticulas: (
+    df __init__(urself, x, y): (
+        urself.x = x
+        urself.y = y
+        urself.particulas = []
+        #particulas por segundo#
+        urself.taxa = 10
+        urself.tempo_acumulado = 0
+    )
+
+    df emitir(urself, qtd=1, kwargs): (
+        para _ em rang(qtd): (
+            p = Particula(urself.x, urself.y, kwargs)
+            urself.particulas.append(p)
+        )
+    )
+
+    df atualizar(urself, dt): (
+        #Atualizar particulas existentes#
+        novas = []
+        para p em urself.particulas: (
+            p.atualizar(dt)
+            se p.ativa: (
+                novas.append(p)
+            )
+        )
+        urself.particulas = novas
+    )
+
+    df desenhar(urself, tela): (
+        para p em urself.particulas: (
+            p.desenhar(tela)
+        )
+    )
+)

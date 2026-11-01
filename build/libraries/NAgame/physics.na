@@ -1,0 +1,156 @@
+#NAgame.physics - Fisica e colisoes#
+
+classify Corpo: (
+    df __init__(urself, x=0, y=0, largura=32, altura=32, massa=1.0): (
+        urself.x = x
+        urself.y = y
+        urself.largura = largura
+        urself.altura = altura
+        urself.massa = massa
+        urself.vel_x = 0
+        urself.vel_y = 0
+        urself.acel_x = 0
+        urself.acel_y = 0
+        urself.gravidade = 9.8
+        urself.atrito = 0.98
+        urself.restituicao = 0.5
+        urself.no_chao = False
+    )
+
+    df atualizar(urself, dt): (
+        #Aplicar gravidade#
+        urself.vel_y = urself.vel_y + urself.gravidade * dt
+
+        #Aplicar forcas#
+        urself.vel_x = urself.vel_x + urself.acel_x * dt
+        urself.vel_y = urself.vel_y + urself.acel_y * dt
+
+        #Aplicar atrito#
+        urself.vel_x = urself.vel_x * urself.atrito
+
+        #Mover#
+        urself.x = urself.x + urself.vel_x * dt
+        urself.y = urself.y + urself.vel_y * dt
+
+        #Resetar aceleracao#
+        urself.acel_x = 0
+        urself.acel_y = 0
+    )
+
+    df aplicar_forca(urself, fx, fy): (
+        urself.acel_x = urself.acel_x + fx / urself.massa
+        urself.acel_y = urself.acel_y + fy / urself.massa
+    )
+
+    df pular(urself, forca=300): (
+        se urself.no_chao: (
+            urself.vel_y = -forca
+            urself.no_chao = False
+        )
+    )
+
+    df parar(urself): (
+        urself.vel_x = 0
+        urself.vel_y = 0
+    )
+)
+
+
+classify Fisica: (
+    df __init__(urself): (
+        urself.corpos = []
+        urself.gravidade = 9.8
+    )
+
+    df add(urself, corpo): (
+        urself.corpos.append(corpo)
+    )
+
+    df remover(urself, corpo): (
+        se corpo em urself.corpos: (
+            urself.corpos.remove(corpo)
+        )
+    )
+
+    df atualizar(urself, dt): (
+        #Atualizar cada corpo#
+        para corpo em urself.corpos: (
+            corpo.atualizar(dt)
+        )
+
+        #Verificar colisoes#
+        urself._checar_colisoes()
+    )
+
+    df _checar_colisoes(urself): (
+        para i em rang(0, len(urself.corpos)): (
+            para j em rang(i + 1, len(urself.corpos)): (
+                a = urself.corpos[i]
+                b = urself.corpos[j]
+                se urself._colide(a, b): (
+                    urself._resolver_colisao(a, b)
+                )
+            )
+        )
+    )
+
+    df _colide(urself, a, b): (
+        ret (a.x < b.x + b.largura e a.x + a.largura > b.x e a.y < b.y + b.altura e a.y + a.altura > b.y)
+    )
+
+    df _resolver_colisao(urself, a, b): (
+        #Simples: separar corpos#
+        sobrepos_x = min(a.x + a.largura, b.x + b.largura) - max(a.x, b.x)
+        sobrepos_y = min(a.y + a.altura, b.y + b.altura) - max(a.y, b.y)
+
+        se sobrepos_x < sobrepos_y: (
+            se a.x < b.x: (
+                a.x = a.x - sobrepos_x / 2
+                b.x = b.x + sobrepos_x / 2
+            ) senao: (
+                a.x = a.x + sobrepos_x / 2
+                b.x = b.x - sobrepos_x / 2
+            )
+            #Trocar velocidades X#
+            temp = a.vel_x
+            a.vel_x = b.vel_x * a.restituicao
+            b.vel_x = temp * b.restituicao
+        ) senao: (
+            se a.y < b.y: (
+                a.y = a.y - sobrepos_y / 2
+                b.y = b.y + sobrepos_y / 2
+                a.no_chao = True
+            ) senao: (
+                a.y = a.y + sobrepos_y / 2
+                b.y = b.y - sobrepos_y / 2
+            )
+            #Trocar velocidades Y#
+            temp = a.vel_y
+            a.vel_y = b.vel_y * a.restituicao
+            b.vel_y = temp * b.restituicao
+        )
+    )
+
+    #Raycast#
+    df raio(urself, x, y, angulo, distancia): (
+        #Retorna primeiro corpo atingido ou None#
+        NA imp impbuild
+        mods = impbuild.importar_comuns("math")
+        dx = mods["math"].cos(angulo)
+        dy = mods["math"].sin(angulo)
+
+        para passo em rang(0, int(distancia)): (
+            px = x + dx * passo
+            py = y + dy * passo
+            para corpo em urself.corpos: (
+                se (px >= corpo.x e px <= corpo.x + corpo.largura e py >= corpo.y e py <= corpo.y + corpo.altura): (
+                    ret corpo
+                )
+            )
+        )
+        ret None
+    )
+)
+
+#Instancia global#
+fisica = Fisica()
