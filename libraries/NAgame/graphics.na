@@ -1,151 +1,177 @@
-#NAgame.graphics - Graficos 2D#
+NA imp native.NAgame.window as _win
+NA imp native.NAgame.graphics as _gfx
+NA imp NAgame.utils as _utils
+NA imp NAgame.camera as _camera
 
-#Janela principal#
-classify Janela: (
-    df __init__(urself, largura, altura, titulo="Jogo NA"): (
-        urself.largura = largura
-        urself.altura = altura
-        urself.titulo = titulo
-        urself._iniciado = False
-        urself._rodando = False
-        urself._cor_fundo = [0, 0, 0]
-        urself._sprites = []
+df window(width, height): (
+    _win.window(width, height)
+)
+
+df st_title(title): (
+    _win.st_title(title)
+)
+
+df close(): (
+    _win.close()
+)
+
+df back(r, g, b): (
+    _win.back(r, g, b)
+)
+
+df updt(): (
+    step = _win.dt()
+    _utils._run(_utils._updaters, step)
+    _utils._run(_utils._overlays, step)
+    if _utils._state["over"]: (
+        _gfx.draw_overlay_message(_utils._state["message"])
     )
+    _win.updt()
+)
 
-    df iniciar(urself): (
-        #Inicializa backend#
-        NA de NAgame imp NAgame as backend_mod
-        urself._backend = backend_mod.NAgame(urself.largura, urself.altura, urself.titulo)
-        urself._backend.iniciar()
-        urself._iniciado = True
-        urself._rodando = True
+df evn(): (
+    ret _win.evn()
+)
+
+df tof(fps): (
+    ret _win.tof(fps)
+)
+
+df dt(): (
+    ret _win.dt()
+)
+
+df gettime(): (
+    ret _win.gettime()
+)
+
+df clr(r, g = None, b = None, a = 255): (
+    ret _gfx.set_color(r, g, b, a)
+)
+
+df fntsz(size): (
+    ret _gfx.set_font_size(size)
+)
+
+df rec(x, y, width, height, border = 0): (
+    shape = _utils.Shape("rec", x, y, width, height, 0)
+    shape.color = _gfx.get_color()
+    shape.border = border
+    draw(shape)
+    ret shape
+)
+
+df circ(x, y, radius, border = 0): (
+    shape = _utils.Shape("circ", x, y, radius * 2, radius * 2, radius)
+    shape.color = _gfx.get_color()
+    shape.border = border
+    draw(shape)
+    ret shape
+)
+
+df lne(x1, y1, x2, y2, thickness = 1): (
+    shape = _utils.Shape("lne", x1, y1, abs(x2 - x1), abs(y2 - y1), 0)
+    shape.color = _gfx.get_color()
+    shape.x2 = x2
+    shape.y2 = y2
+    shape.thickness = thickness
+    draw(shape)
+    ret shape
+)
+
+df txt(text, x, y): (
+    size = _gfx.get_font_size()
+    dimensions = _gfx.text_size(str(text), size)
+    shape = _utils.Shape("txt", x, y, dimensions[0], dimensions[1], 0)
+    shape.color = _gfx.get_color()
+    shape.text = str(text)
+    shape.size = size
+    draw(shape)
+    ret shape
+)
+
+df draw(obj, ui = False): (
+    kind = obj.kind
+    if kind == "rec": (
+        _gfx.draw_rec(obj.x, obj.y, obj.width, obj.height, obj.border, obj.color, ui)
     )
-
-    df rodar(urself, atualizar, desenhar): (
-        se nao urself._iniciado: (
-            urself.iniciar()
+    else if kind == "circ": (
+        _gfx.draw_circ(obj.x, obj.y, obj.radius, obj.border, obj.color, ui)
+    )
+    else if kind == "lne": (
+        _gfx.draw_line(obj.x, obj.y, obj.x2, obj.y2, obj.thickness, obj.color, ui)
+    )
+    else if kind == "txt": (
+        _gfx.draw_text(obj.text, obj.x, obj.y, obj.size, obj.color, ui)
+    )
+    else if kind == "image": (
+        _gfx.draw_image(obj.handle, obj.x, obj.y, obj.width, obj.height, 0, 255, False, False, ui)
+    )
+    else if kind == "sprite": (
+        if obj.animation is not None: (
+            obj.image = obj.animation.frame()
         )
-        urself._backend.rodar(atualizar, desenhar)
+        _gfx.draw_image(obj.image.handle, obj.x, obj.y, obj.width, obj.height, obj.angle, obj.alpha, obj.flipx, obj.flipy, ui)
     )
-
-    df parar(urself): (
-        urself._rodando = False
-        urself._backend.parar()
-    )
-
-    #Cor de fundo#
-    df fundo(urself, r, g, b): (
-        urself._cor_fundo = [r, g, b]
-        urself._backend.limpar([r, g, b])
-    )
-
-    #Desenho basico#
-    df retangulo(urself, x, y, w, h, cor=[255,255,255], preenchido=True): (
-        urself._backend.retangulo(x, y, w, h, cor, preenchido)
-    )
-
-    df circ(urself, x, y, raio, cor=[255,255,255], preenchido=True): (
-        urself._backend.circ(x, y, raio, cor, preenchido)
-    )
-
-    df linha(urself, x1, y1, x2, y2, cor=[255,255,255], espessura=1): (
-        urself._backend.linha(x1, y1, x2, y2, cor, espessura)
-    )
-
-    df texto(urself, txt, x, y, tamanho=24, cor=[255,255,255]): (
-        urself._backend.texto(txt, x, y, tamanho, cor)
-    )
-
-    #Imagens#
-    df carregar_img(urself, caminho): (
-        ret urself._backend.img(caminho, 0, 0)
-    )
-
-    df desenhar_img(urself, img, x, y, largura=None, altura=None): (
-        urself._backend.img(img, x, y, largura, altura)
-    )
-
-    #Sprites#
-    df add_sprite(urself, sprite): (
-        urself._sprites.append(sprite)
-    )
-
-    df limpar_sprites(urself): (
-        urself._sprites = []
-    )
-
-    #Utilitarios#
-    df fps(urself): (
-        ret urself._backend.fps()
-    )
-
-    df tempo(urself): (
-        ret urself._backend.tempo()
-    )
-
-    df centralizar(urself, obj_w, obj_h): (
-        ret urself._backend.centralizar(obj_w, obj_h)
+    else: (
+        obj.render(ui)
     )
 )
 
-
-#Sprite base#
-classify Sprite: (
-    df __init__(urself, x=0, y=0, img=None): (
-        urself.x = x
-        urself.y = y
-        urself.img = img
-        urself.visivel = True
-        urself.rotacao = 0
-        urself.escala = 1.0
-        urself.alpha = 255
-    )
-
-    df desenhar(urself, tela): (
-        se urself.visivel e urself.img: (
-            tela.desenhar_img(urself.img, urself.x, urself.y)
-        )
-    )
-
-    df mover(urself, dx, dy): (
-        urself.x = urself.x + dx
-        urself.y = urself.y + dy
-    )
-
-    df pos(urself, x=None, y=None): (
-        se x != None: (
-            urself.x = x
-        )
-        se y != None: (
-            urself.y = y
-        )
-        ret [urself.x, urself.y]
-    )
+df loadimg(path): (
+    data = _gfx.load_image(path)
+    ret _utils.Image(data[0], data[1], data[2])
 )
 
+df shwimg(img, x, y): (
+    _gfx.draw_image(img.handle, x, y, img.width, img.height, 0, 255, False, False, False)
+)
 
-#Sprite animado#
-classify SpriteAnimado(Sprite): (
-    df __init__(urself, x=0, y=0, frames=None, velocidade=10): (
-        super().__init__(x, y)
-        urself.frames = frames ou []
-        urself.frame_atual = 0
-        urself.velocidade = velocidade
-        urself.tempo_frame = 0
-        se urself.frames: (
-            urself.img = urself.frames[0]
-        )
-    )
+df sprt(img, x = 0, y = 0): (
+    ret _utils.Sprite(img, x, y)
+)
 
-    df atualizar(urself, dt): (
-        se nao urself.frames: (
-            ret
-        )
-        urself.tempo_frame = urself.tempo_frame + dt * 1000
-        se urself.tempo_frame >= urself.velocidade: (
-            urself.tempo_frame = 0
-            urself.frame_atual = (urself.frame_atual + 1) % len(urself.frames)
-            urself.img = urself.frames[urself.frame_atual]
-        )
+df rsze(obj, width, height): (
+    if obj.kind == "image": (
+        data = _gfx.resize_image(obj.handle, width, height)
+        ret _utils.Image(data[0], data[1], data[2])
     )
+    obj.width = width
+    obj.height = height
+    ret obj
+)
+
+df rttae(obj, angle): (
+    if obj.kind == "image": (
+        data = _gfx.rotate_image(obj.handle, angle)
+        ret _utils.Image(data[0], data[1], data[2])
+    )
+    obj.angle = angle
+    ret obj
+)
+
+df alp(obj, value): (
+    if value < 0 or value > 255: (
+        perror ValueError("alp(): o valor deve estar entre 0 e 255")
+    )
+    if obj.kind == "image": (
+        data = _gfx.set_image_alpha(obj.handle, value)
+        ret _utils.Image(data[0], data[1], data[2])
+    )
+    obj.alpha = value
+    ret obj
+)
+
+df flp(obj, horizontal = True, vertical = False): (
+    if obj.kind == "image": (
+        data = _gfx.flip_image(obj.handle, horizontal, vertical)
+        ret _utils.Image(data[0], data[1], data[2])
+    )
+    if horizontal: (
+        obj.flipx = not obj.flipx
+    )
+    if vertical: (
+        obj.flipy = not obj.flipy
+    )
+    ret obj
 )

@@ -1,155 +1,180 @@
-#NAgame.physics - Fisica e colisoes#
+NA imp native.NAgame.physics as _pc
+NA imp native.NAgame.window as _win
+NA imp NAgame.utils as _utils
 
-classify Corpo: (
-    df __init__(urself, x=0, y=0, largura=32, altura=32, massa=1.0): (
-        urself.x = x
-        urself.y = y
-        urself.largura = largura
-        urself.altura = altura
-        urself.massa = massa
-        urself.vel_x = 0
-        urself.vel_y = 0
-        urself.acel_x = 0
-        urself.acel_y = 0
-        urself.gravidade = 9.8
-        urself.atrito = 0.98
-        urself.restituicao = 0.5
-        urself.no_chao = False
+grv = 980.0
+_ground = None
+
+_MATERIALS = {
+    "rubber": {"friction": 2.0, "bounce": 0.85, "density": 1.1},
+    "metal": {"friction": 1.0, "bounce": 0.2, "density": 7.8},
+    "wood": {"friction": 3.0, "bounce": 0.35, "density": 0.7},
+    "ice": {"friction": 0.1, "bounce": 0.1, "density": 0.9},
+    "stone": {"friction": 4.0, "bounce": 0.15, "density": 2.5}
+}
+
+df _shape(obj): (
+    if obj.kind == "circ": (
+        ret ["circ", obj.x, obj.y, 0, 0, obj.radius]
     )
-
-    df atualizar(urself, dt): (
-        #Aplicar gravidade#
-        urself.vel_y = urself.vel_y + urself.gravidade * dt
-
-        #Aplicar forcas#
-        urself.vel_x = urself.vel_x + urself.acel_x * dt
-        urself.vel_y = urself.vel_y + urself.acel_y * dt
-
-        #Aplicar atrito#
-        urself.vel_x = urself.vel_x * urself.atrito
-
-        #Mover#
-        urself.x = urself.x + urself.vel_x * dt
-        urself.y = urself.y + urself.vel_y * dt
-
-        #Resetar aceleracao#
-        urself.acel_x = 0
-        urself.acel_y = 0
-    )
-
-    df aplicar_forca(urself, fx, fy): (
-        urself.acel_x = urself.acel_x + fx / urself.massa
-        urself.acel_y = urself.acel_y + fy / urself.massa
-    )
-
-    df pular(urself, forca=300): (
-        se urself.no_chao: (
-            urself.vel_y = -forca
-            urself.no_chao = False
-        )
-    )
-
-    df parar(urself): (
-        urself.vel_x = 0
-        urself.vel_y = 0
-    )
+    ret ["rec", obj.x, obj.y, obj.width, obj.height, 0]
 )
 
+df colde(obj1, obj2): (
+    ret _pc.collide(_shape(obj1), _shape(obj2))
+)
 
-classify Fisica: (
-    df __init__(urself): (
-        urself.corpos = []
-        urself.gravidade = 9.8
+df tch(obj1, obj2): (
+    ret _pc.touch(_shape(obj1), _shape(obj2))
+)
+
+df ray(x1, y1, x2, y2, obstacles): (
+    shapes = []
+    for obstacle in obstacles: (
+        shapes.append(_shape(obstacle))
     )
-
-    df add(urself, corpo): (
-        urself.corpos.append(corpo)
-    )
-
-    df remover(urself, corpo): (
-        se corpo em urself.corpos: (
-            urself.corpos.remove(corpo)
-        )
-    )
-
-    df atualizar(urself, dt): (
-        #Atualizar cada corpo#
-        para corpo em urself.corpos: (
-            corpo.atualizar(dt)
-        )
-
-        #Verificar colisoes#
-        urself._checar_colisoes()
-    )
-
-    df _checar_colisoes(urself): (
-        para i em rang(0, len(urself.corpos)): (
-            para j em rang(i + 1, len(urself.corpos)): (
-                a = urself.corpos[i]
-                b = urself.corpos[j]
-                se urself._colide(a, b): (
-                    urself._resolver_colisao(a, b)
-                )
-            )
-        )
-    )
-
-    df _colide(urself, a, b): (
-        ret (a.x < b.x + b.largura e a.x + a.largura > b.x e a.y < b.y + b.altura e a.y + a.altura > b.y)
-    )
-
-    df _resolver_colisao(urself, a, b): (
-        #Simples: separar corpos#
-        sobrepos_x = min(a.x + a.largura, b.x + b.largura) - max(a.x, b.x)
-        sobrepos_y = min(a.y + a.altura, b.y + b.altura) - max(a.y, b.y)
-
-        se sobrepos_x < sobrepos_y: (
-            se a.x < b.x: (
-                a.x = a.x - sobrepos_x / 2
-                b.x = b.x + sobrepos_x / 2
-            ) senao: (
-                a.x = a.x + sobrepos_x / 2
-                b.x = b.x - sobrepos_x / 2
-            )
-            #Trocar velocidades X#
-            temp = a.vel_x
-            a.vel_x = b.vel_x * a.restituicao
-            b.vel_x = temp * b.restituicao
-        ) senao: (
-            se a.y < b.y: (
-                a.y = a.y - sobrepos_y / 2
-                b.y = b.y + sobrepos_y / 2
-                a.no_chao = True
-            ) senao: (
-                a.y = a.y + sobrepos_y / 2
-                b.y = b.y - sobrepos_y / 2
-            )
-            #Trocar velocidades Y#
-            temp = a.vel_y
-            a.vel_y = b.vel_y * a.restituicao
-            b.vel_y = temp * b.restituicao
-        )
-    )
-
-    #Raycast#
-    df raio(urself, x, y, angulo, distancia): (
-        #Retorna primeiro corpo atingido ou None#
-        NA de python.math imp cos, sin
-        dx = cos(angulo)
-        dy = sin(angulo)
-
-        para passo em rang(0, int(distancia)): (
-            px = x + dx * passo
-            py = y + dy * passo
-            para corpo em urself.corpos: (
-                se (px >= corpo.x e px <= corpo.x + corpo.largura e py >= corpo.y e py <= corpo.y + corpo.altura): (
-                    ret corpo
-                )
-            )
-        )
+    hit = _pc.raycast(x1, y1, x2, y2, shapes)
+    if hit is None: (
         ret None
     )
+    ret {"obj": obstacles[hit[0]], "x": hit[1], "y": hit[2], "distance": hit[3]}
 )
 
-#Instancia global#
-fisica = Fisica()
+df mate(first, second = None): (
+    if typeof(first) == "str": (
+        ret _preset(first)
+    )
+    preset = _preset(second)
+    first.friction = preset["friction"]
+    first.bounce = preset["bounce"]
+    first.mass = preset["density"]
+    ret first
+)
+
+df _preset(name): (
+    if name not in _MATERIALS: (
+        perror ValueError("material desconhecido: " + str(name))
+    )
+    source = _MATERIALS[name]
+    ret {"friction": source["friction"], "bounce": source["bounce"], "density": source["density"]}
+)
+
+df pos(obj, x, y): (
+    obj.x = x
+    obj.y = y
+    ret obj
+)
+
+df getpos(obj): (
+    ret [obj.x, obj.y]
+)
+
+df spd(obj, vx = None, vy = None): (
+    if vx is None: (
+        ret [obj.vx, obj.vy]
+    )
+    obj.vx = vx
+    if vy is not None: (
+        obj.vy = vy
+    )
+    ret obj
+)
+
+df acc(obj, ax = None, ay = None): (
+    if ax is None: (
+        ret [obj.ax, obj.ay]
+    )
+    obj.ax = ax
+    if ay is not None: (
+        obj.ay = ay
+    )
+    ret obj
+)
+
+df mass(obj, value = None): (
+    if value is None: (
+        ret obj.mass
+    )
+    if value <= 0: (
+        perror ValueError("mass(): a massa deve ser maior que zero")
+    )
+    obj.mass = value
+    ret obj
+)
+
+df fric(obj, value = None): (
+    if value is None: (
+        ret obj.friction
+    )
+    if value < 0: (
+        perror ValueError("fric(): o atrito não pode ser negativo")
+    )
+    obj.friction = value
+    ret obj
+)
+
+df bounc(obj, value = None): (
+    if value is None: (
+        ret obj.bounce
+    )
+    if value < 0 or value > 1: (
+        perror ValueError("bounc(): o quique deve estar entre 0 e 1")
+    )
+    obj.bounce = value
+    ret obj
+)
+
+df jmp(obj, force): (
+    if not obj.on_ground: (
+        ret False
+    )
+    obj.vy = 0 - force / obj.mass
+    obj.on_ground = False
+    ret True
+)
+
+df grnd(y = None): (
+    glob _ground
+    if y is None: (
+        ret _ground
+    )
+    if y is False: (
+        _ground = None
+        ret None
+    )
+    _ground = y
+    ret y
+)
+
+df phys(obj, step = None): (
+    if step is None: (
+        step = _win.dt()
+    )
+    obj.vx = obj.vx + obj.ax * step
+    obj.vy = obj.vy + (grv * obj.gravity + obj.ay) * step
+    if obj.on_ground: (
+        obj.vx = obj.vx * max(0.0, 1.0 - obj.friction * step)
+    )
+    obj.x = obj.x + obj.vx * step
+    obj.y = obj.y + obj.vy * step
+    obj.on_ground = False
+    if _ground is not None: (
+        overlap = obj.bottom() - _ground
+        if overlap >= 0: (
+            obj.y = obj.y - overlap
+            if obj.vy > 0: (
+                if obj.bounce > 0 and obj.vy > 30: (
+                    obj.vy = 0 - obj.vy * obj.bounce
+                )
+                else: (
+                    obj.vy = 0.0
+                    obj.on_ground = True
+                )
+            )
+            else: (
+                obj.on_ground = True
+            )
+        )
+    )
+    ret obj
+)

@@ -1,54 +1,50 @@
-#NAgame.audio - Sistema de audio#
+NA imp native.NAgame.audio as _au
 
-classify Audio: (
-    df __init__(urself): (
-        NA imp impbuild
-        urself._backend = impbuild.NAgame()
-        urself._musicas = {}
-        urself._sons = {}
-    )
-
-    #Musica#
-    df carregar_msc(urself, nome, arquivo): (
-        urself._musicas[nome] = arquivo
-    )
-
-    df tocar_msc(urself, nome, loop=True, volume=1.0): (
-        arquivo = urself._musicas.get(nome)
-        se arquivo: (
-            urself._backend.playmsc(arquivo, loop, volume)
-        )
-    )
-
-    df pausar_msc(urself): (
-        urself._backend.pausemsc()
-    )
-
-    df parar_msc(urself): (
-        urself._backend.stopmsc()
-    )
-
-    df vol_msc(urself, valor): (
-        urself._backend.volmsc(valor)
-    )
-
-    #Efeitos sonoros#
-    df carregar_snd(urself, nome, arquivo): (
-        urself._sons[nome] = arquivo
-    )
-
-    df tocar_snd(urself, nome, volume=1.0): (
-        arquivo = urself._sons.get(nome)
-        se arquivo: (
-            urself._backend.playsnd(arquivo, volume)
-        )
-    )
-
-    #Controle#
-    df vol_snd(urself, valor): (
-        urself._backend.vlint(valor)
+classify Sound: (
+    df __init__(urself, handle, path): (
+        urself.kind = "sound"
+        urself.handle = handle
+        urself.path = path
     )
 )
 
-#Instancia global#
-audio = Audio()
+df loadmsc(file): (
+    _au.load_music(file)
+)
+
+df playmsc(file = None): (
+    _au.play_music(file)
+)
+
+df pausemsc(): (
+    _au.pause_music()
+)
+
+df stopmsc(): (
+    _au.stop_music()
+)
+
+df loopmsc(file = None): (
+    _au.loop_music(file)
+)
+
+df volmsc(value): (
+    _au.set_music_volume(value)
+)
+
+df vlint(value): (
+    _au.set_sfx_volume(value)
+)
+
+df loadsnd(file): (
+    ret Sound(_au.load_sound(file), file)
+)
+
+df playsnd(file): (
+    if typeof(file) == "str": (
+        _au.play_sound(_au.load_sound(file))
+    )
+    else: (
+        _au.play_sound(file.handle)
+    )
+)

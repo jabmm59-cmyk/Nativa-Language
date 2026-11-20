@@ -1,0 +1,52 @@
+total = 0
+
+df somar(n): (
+    glob total
+    total = total + n
+)
+
+somar(5)
+somar(10)
+shw "total:", total
+
+df contador(): (
+    n = 0
+    df passo(): (
+        nolocal n
+        n = n + 1
+        ret n
+    )
+    ret passo
+)
+
+proximo = contador()
+proximo()
+proximo()
+shw "contador:", proximo()
+
+dobro = afction x: x * 2
+quadrado = afction x: x ** 2
+shw "funcoes:", dobro(21), quadrado(7)
+
+numeros = [1, 2, 3, 4]
+dlt numeros[0]
+shw numeros
+
+classify Arquivo: (
+    df __init__(urself, nome): (
+        urself.nome = nome
+    )
+    df __enter__(urself): (
+        shw "abrindo", urself.nome
+        ret urself
+    )
+    df __exit__(urself, erro): (
+        shw "fechando", urself.nome
+        ret False
+    )
+)
+
+wth Arquivo("dados.txt") as arq: (
+    shw "usando", arq.nome
+    tpvfetc
+)

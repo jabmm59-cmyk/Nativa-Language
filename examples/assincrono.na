@@ -1,0 +1,13 @@
+dsync df baixar(nome, segundos): (
+    shw "iniciando", nome
+    dwait sleep(segundos)
+    shw "pronto", nome
+    ret nome.upper()
+)
+
+dsync df principal(): (
+    resultados = dwait gather(baixar("a", 0.04), baixar("b", 0.01), baixar("c", 0.02))
+    shw resultados
+)
+
+runasync(principal())

@@ -1,76 +1,129 @@
-#NAgame.utils - Utilitarios#
+NA imp random as _random
+NA imp math as _math
 
-#Aleatoriedade#
-df rnd(min=0, max=1): (
-    NA imp impbuild
-    mods = impbuild.importar_comuns("random")
-    ret mods["random"].uniform(min, max)
-)
+_updaters = []
+_overlays = []
+_state = {"over": False, "message": "GAME OVER"}
 
-df rnd_int(min, max): (
-    NA imp impbuild
-    mods = impbuild.importar_comuns("random")
-    ret mods["random"].randint(min, max)
-)
-
-df escolher(lista): (
-    NA imp impbuild
-    mods = impbuild.importar_comuns("random")
-    ret mods["random"].choice(lista)
-)
-
-#Matematica#
-df dist(x1, y1, x2, y2): (
-    NA imp impbuild
-    mods = impbuild.importar_comuns("math")
-    dx = x2 - x1
-    dy = y2 - y1
-    ret mods["math"].sqrt(dx * dx + dy * dy)
-)
-
-df angulo(x1, y1, x2, y2): (
-    NA imp impbuild
-    mods = impbuild.importar_comuns("math")
-    ret mods["math"].atan2(y2 - y1, x2 - x1)
-)
-
-df lerp(a, b, t): (
-    ret a + (b - a) * t
-)
-
-df clamp(valor, min_v, max_v): (
-    se valor < min_v: (
-        ret min_v
+classify Image: (
+    df __init__(urself, handle, width, height): (
+        urself.kind = "image"
+        urself.handle = handle
+        urself.width = width
+        urself.height = height
     )
-    se valor > max_v: (
-        ret max_v
+)
+
+classify Body: (
+    df __init__(urself, kind, x, y, width = 0, height = 0, radius = 0): (
+        urself.kind = kind
+        urself.x = x
+        urself.y = y
+        urself.width = width
+        urself.height = height
+        urself.radius = radius
+        urself.vx = 0.0
+        urself.vy = 0.0
+        urself.ax = 0.0
+        urself.ay = 0.0
+        urself.mass = 1.0
+        urself.friction = 0.0
+        urself.bounce = 0.0
+        urself.gravity = 1.0
+        urself.on_ground = False
+        urself.color = [255, 255, 255, 255]
     )
-    ret valor
+
+    df center(urself): (
+        if urself.kind == "circ": (
+            ret [urself.x, urself.y]
+        )
+        ret [urself.x + urself.width / 2, urself.y + urself.height / 2]
+    )
+
+    df bottom(urself): (
+        if urself.kind == "circ": (
+            ret urself.y + urself.radius
+        )
+        ret urself.y + urself.height
+    )
 )
 
-#Tempo#
-df agora(): (
-    NA imp impbuild
-    mods = impbuild.importar_comuns("time")
-    ret mods["time"].time()
+classify Shape(Body): (
+    tpvfetc
 )
 
-#Debug#
-df debug(msg): (
-    shw "[DEBUG]", msg
+classify Sprite(Body): (
+    df __init__(urself, image, x, y): (
+        Body.__init__(urself, "sprite", x, y, image.width, image.height)
+        urself.image = image
+        urself.angle = 0.0
+        urself.alpha = 255
+        urself.flipx = False
+        urself.flipy = False
+        urself.animation = None
+    )
+
+    df play(urself, animation): (
+        urself.animation = animation
+        ret urself
+    )
 )
 
-df log(msg): (
-    shw "[LOG]", msg
+df _clear(items): (
+    while len(items) > 0: (
+        items.pop()
+    )
 )
 
-#Cores#
-branco = [255, 255, 255]
-preto = [0, 0, 0]
-vermelho = [255, 0, 0]
-verde = [0, 255, 0]
-azul = [0, 0, 255]
-amarelo = [255, 255, 0]
-ciano = [0, 255, 255]
-magenta = [255, 0, 255]
-cinza = [128, 128, 128]
+df _run(items, step): (
+    dead = []
+    for fn in list(items): (
+        if fn(step) is False: (
+            dead.append(fn)
+        )
+    )
+    for fn in dead: (
+        if fn in items: (
+            items.remove(fn)
+        )
+    )
+)
+
+df _register_updater(fn): (
+    _updaters.append(fn)
+    ret fn
+)
+
+df _register_overlay(fn): (
+    _overlays.append(fn)
+    ret fn
+)
+
+df rnd(a = None, b = None): (
+    if a is None: (
+        ret _random.rand()
+    )
+    if b is None: (
+        if typeof(a) == "list": (
+            ret _random.choice(a)
+        )
+        ret _random.randint(0, a - 1)
+    )
+    if typeof(a) == "float" or typeof(b) == "float": (
+        ret _random.uniform(a, b)
+    )
+    ret _random.randint(a, b)
+)
+
+df debug(*values): (
+    parts = []
+    for value in values: (
+        parts.append(str(value))
+    )
+    shw "[debug] " + " ".join(parts)
+    if len(values) > 0: (
+        ret values[0]
+    )
+    ret None
+)

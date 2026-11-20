@@ -1,0 +1,65 @@
+NA imp NAgame
+
+NAgame.window(800, 450)
+NAgame.st_title("Nativa - Coletor de moedas")
+NAgame.grnd(400)
+NAgame.fntsz(28)
+
+NAgame.clr(80, 200, 120)
+player = NAgame.rec(100, 300, 40, 60)
+NAgame.camfolw(player, 0.1)
+
+coins = []
+NAgame.clr("yellow")
+for i in rang(6): (
+    coins.append(NAgame.circ(300 + i * 140, 360, 12))
+)
+
+score = 0
+while NAgame.evn(): (
+    NAgame.back(25, 30, 50)
+
+    if NAgame.key("left"): (
+        NAgame.spd(player, -260, player.vy)
+    )
+    else if NAgame.key("right"): (
+        NAgame.spd(player, 260, player.vy)
+    )
+    else: (
+        NAgame.spd(player, 0, player.vy)
+    )
+    if NAgame.key("space", True): (
+        NAgame.jmp(player, 650)
+    )
+    NAgame.phys(player)
+
+    NAgame.clr(70, 70, 90)
+    NAgame.rec(-1000, 400, 4000, 200)
+
+    remaining = []
+    for coin in coins: (
+        if NAgame.colde(player, coin): (
+            score = score + 1
+            NAgame.clr("orange")
+            NAgame.prt(coin.x, coin.y, 14, None, 160, 0.6, 3, 300)
+        )
+        else: (
+            remaining.append(coin)
+            NAgame.draw(coin)
+        )
+    )
+    coins = remaining
+
+    NAgame.draw(player)
+    view = NAgame.campos()
+    NAgame.clr("white")
+    NAgame.txt("Moedas: {score}", view[0] - 380, view[1] - 210)
+
+    if len(coins) == 0: (
+        NAgame.gameover("Você coletou tudo!")
+    )
+    NAgame.updt()
+    NAgame.tof(60)
+)
+NAgame.close()
+shw "pontuação final:", score

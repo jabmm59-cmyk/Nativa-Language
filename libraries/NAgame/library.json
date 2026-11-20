@@ -1,0 +1,5 @@
+{
+  "name": "NAgame",
+  "version": "1.0.0",
+  "dependencies": ["math", "random", "json"]
+}

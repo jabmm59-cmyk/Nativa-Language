@@ -1,11 +1,19 @@
-#NAgame - Biblioteca oficial de jogos da Nativa#
-#Versao 1.0.0#
+NA imp NAgame.utils
+NA imp NAgame.camera
+NA imp NAgame.graphics
+NA imp NAgame.input
+NA imp NAgame.audio
+NA imp NAgame.physics
+NA imp NAgame.animation
+NA imp NAgame.particles
+NA imp NAgame.interface
 
-#Funcao principal para criar jogo#
-df jogo(titulo="Jogo NA", largura=800, altura=600): (
-    g = Janela(largura, altura, titulo)
-    ret g
-)
-
-#Exportar versao#
-versao = "1.0.0"
+reexport(NAgame.utils)
+reexport(NAgame.camera)
+reexport(NAgame.graphics)
+reexport(NAgame.input)
+reexport(NAgame.audio)
+reexport(NAgame.physics)
+reexport(NAgame.animation)
+reexport(NAgame.particles)
+reexport(NAgame.interface)

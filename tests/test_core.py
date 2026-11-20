@@ -533,19 +533,11 @@ class TestErrorsWithPosition(unittest.TestCase):
             run('shw 1\nshw "a {nope}"')
         self.assertEqual(ctx.exception.line, 2)
 
-    def test_pending_keywords_are_reserved(self):
-        # xcept, idgafatc, perror are now implemented but restricted to try blocks
-        with self.assertRaises(NativaSyntaxError) as ctx:
-            run("xcept = 1")
-        self.assertIn("'xcept' deve ser usado dentro de 'try'", str(ctx.exception))
-
-        with self.assertRaises(NativaSyntaxError) as ctx:
-            run("idgafatc = 1")
-        self.assertIn("'idgafatc' deve ser usado dentro de 'try'", str(ctx.exception))
-
-        # perror is now implemented
-        with self.assertRaises(NativaRuntimeError):
-            run("perror 'test'")
+    def test_command_names_are_reserved(self):
+        for word in ("xcept", "idgafatc", "perror", "tpvfetc", "dlt", "glob", "nolocal",
+                     "afction", "verf", "wth", "dsync", "dwait"):
+            with self.assertRaises(NativaSyntaxError):
+                run(f"{word} = 1")
 
     def test_invalid_assignment_target(self):
         with self.assertRaises(NativaSyntaxError):

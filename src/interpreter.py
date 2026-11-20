@@ -1,14 +1,17 @@
-import importlib
 import operator
 import sys
-import types
 
 from . import ast_nodes as A
-from .errors import NativaError, NativaRuntimeError, NativaSyntaxError
+from .asyncrt import Scheduler
+from .errors import NativaError, NativaRuntimeError, classify_message
+from .parser import parse
+from .prelude import PRELUDE
 from .runtime import (
     METHODS, MISSING, BoundMethod, BreakSignal, BuiltinFunction, ContinueSignal,
-    Environment, NativaBuiltinError, NativaClass, NativaException, NativaFunction, NativaInstance,
-    ReturnSignal, adapt_result, describe_exception, make_builtins, type_name,
+    Coroutine, Environment, GatherAwaitable, NativaBuiltinError, NativaClass,
+    NativaFunction, NativaInstance, NativaThrow, NativeModule, SleepAwaitable,
+    Task, ReturnSignal, adapt_result, describe_exception, inherits, is_number,
+    make_builtins, type_name,
 )
 
 MAX_CALL_DEPTH = 400
@@ -24,36 +27,135 @@ COMPARATORS = {
 }
 
 
-class NativaModuleWrapper:
-    """Wrap a Nativa library's exports as a module-like object."""
-    def __init__(self, exports, name, interpreter):
-        self._exports = exports
-        self._name = name
-        self._interpreter = interpreter
-
-    def __getattr__(self, name):
-        if name in self._exports:
-            return self._interpreter._wrap_python_value(self._exports[name])
-        raise AttributeError(f"módulo '{self._name}' não possui '{name}'")
-
-    def __dir__(self):
-        return list(self._exports.keys())
-
-
 class Interpreter:
-    def __init__(self, filename="<principal>", out=None, input_fn=None):
+    def __init__(self, filename="<principal>", out=None, input_fn=None, loader=None, script_dir=None):
         sys.setrecursionlimit(max(sys.getrecursionlimit(), 20000))
         self.filename = filename
+        self.loader = loader
+        self.script_dir = script_dir
         self.out = out if out is not None else sys.stdout
         self.input_fn = input_fn if input_fn is not None else input
         self.depth = 0
-        self.globals = Environment()
+        self.builtins = Environment()
+        self.globals = Environment(self.builtins, is_module=True)
         for name, fn in make_builtins(self.to_str).items():
-            self.globals.define(name, BuiltinFunction(name, fn))
+            self.builtins.define(name, BuiltinFunction(name, fn))
+        self.scheduler = Scheduler(self)
+        self.install_async_builtins()
+        self.exec_block(parse(PRELUDE, "<prelude>").body, self.builtins)
 
-    def error(self, node, message):
+    def install_async_builtins(self):
+        def b_sleep(seconds=0):
+            if not is_number(seconds) or seconds < 0:
+                raise NativaBuiltinError("sleep() requer um número não negativo", "ValueError")
+            return SleepAwaitable(float(seconds))
+
+        def b_gather(*items):
+            if len(items) == 1 and isinstance(items[0], list):
+                items = items[0]
+            return GatherAwaitable(list(items))
+
+        def b_spawn(coro):
+            if not isinstance(coro, Coroutine):
+                raise NativaBuiltinError("spawn() requer uma corrotina", "TypeError")
+            return self.scheduler.spawn(coro)
+
+        def b_runasync(awaitable):
+            if self.scheduler.current is not None:
+                raise NativaBuiltinError("runasync() não pode ser usado dentro de uma corrotina", "RuntimeError")
+            return self.scheduler.await_(awaitable, None)
+
+        def b_reexport(env, module):
+            if not isinstance(module, NativeModule):
+                raise NativaBuiltinError("reexport() requer um módulo", "TypeError")
+            target = env.module_env().vars
+            for key, value in module.attrs.items():
+                if not key.startswith("_"):
+                    target[key] = value
+
+        for name, fn in (("sleep", b_sleep), ("gather", b_gather), ("spawn", b_spawn), ("runasync", b_runasync)):
+            self.builtins.define(name, BuiltinFunction(name, fn))
+        self.builtins.define("reexport", BuiltinFunction("reexport", b_reexport, needs_env=True))
+
+        def b_typeof(value):
+            return type_name(value)
+
+        def b_hasattr(obj, name):
+            if not isinstance(name, str):
+                raise NativaBuiltinError("hasattr() requer o nome do atributo como texto", "TypeError")
+            if isinstance(obj, NativaInstance):
+                return name in obj.fields or obj.cls.find(name) is not MISSING
+            if isinstance(obj, NativaClass):
+                return obj.find(name) is not MISSING
+            if isinstance(obj, NativeModule):
+                return name in obj.attrs
+            if isinstance(obj, str) and name == "dr":
+                return True
+            allowed = METHODS.get(type(obj))
+            return allowed is not None and name in allowed
+
+        self.builtins.define("typeof", BuiltinFunction("typeof", b_typeof))
+        self.builtins.define("hasattr", BuiltinFunction("hasattr", b_hasattr))
+
+    def get_loader(self):
+        if self.loader is None:
+            from impbuild.loader import Loader
+
+            self.loader = Loader()
+            if self.script_dir:
+                self.loader.add_search_dir(self.script_dir)
+        return self.loader
+
+    def exec_Import(self, node, env):
+        loader = self.get_loader()
+        for item in node.items:
+            try:
+                top, leaf = loader.import_dotted(item.path, self, item)
+            except NativaRuntimeError as e:
+                if e.line is None:
+                    e.line, e.col, e.filename = item.line, item.col, self.filename
+                raise
+            if item.alias:
+                env.define(item.alias, leaf)
+            else:
+                env.define(item.path.split(".")[0], top)
+
+    def error(self, node, message, error_class=None):
         return NativaRuntimeError(
-            message, getattr(node, "line", None), getattr(node, "col", None), self.filename
+            message, getattr(node, "line", None), getattr(node, "col", None), self.filename,
+            error_class or classify_message(message),
+        )
+
+    def make_exception(self, class_name, message, line=None, col=None):
+        found, cls = self.builtins.lookup(class_name)
+        if not found:
+            found, cls = self.builtins.lookup("RuntimeError")
+        instance = NativaInstance(cls)
+        instance.fields["message"] = message
+        instance.fields["line"] = line
+        instance.fields["col"] = col
+        return instance
+
+    def throw(self, class_name, message, node):
+        raise NativaThrow(
+            self.make_exception(class_name, message, getattr(node, "line", None), getattr(node, "col", None)),
+            node,
+        )
+
+    def to_exception(self, caught):
+        if isinstance(caught, NativaThrow):
+            return caught.value
+        if isinstance(caught, NativaRuntimeError):
+            return self.make_exception(caught.error_class, caught.message, caught.line, caught.col)
+        return self.make_exception("RuntimeError", "limite de recursão excedido")
+
+    def uncaught(self, signal):
+        instance = signal.value
+        node = signal.node
+        line = getattr(node, "line", None) or instance.fields.get("line")
+        col = getattr(node, "col", None) or instance.fields.get("col")
+        return NativaRuntimeError(
+            f"{instance.cls.name}: {self.to_str(instance)}", line, col, self.filename, instance.cls.name
         )
 
     def run(self, program):
@@ -62,6 +164,8 @@ class Interpreter:
         except (BreakSignal, ContinueSignal) as signal:
             word = "brk" if isinstance(signal, BreakSignal) else "continue"
             raise self.error(signal.node, f"'{word}' fora de um laço")
+        except NativaThrow as signal:
+            raise self.uncaught(signal)
         except RecursionError:
             raise self.error(None, "limite de recursão excedido")
 
@@ -89,12 +193,16 @@ class Interpreter:
                 result = self.call_function(method, [value], {}, None)
                 return result if isinstance(result, str) else self.to_str(result)
             return f"<{value.cls.name} instância>"
+        if isinstance(value, NativeModule):
+            return f"<módulo {value.name}>"
+        if isinstance(value, Coroutine):
+            return f"<corrotina {value.fn.name}>"
+        if isinstance(value, (Task, SleepAwaitable, GatherAwaitable)):
+            return "<tarefa>"
         if isinstance(value, NativaClass):
             return f"<classe {value.name}>"
         if isinstance(value, NativaFunction):
             return f"<função {value.name}>"
-        if isinstance(value, NativaExceptionWrapper):
-            return str(value)
         if isinstance(value, BoundMethod):
             return f"<método {value.func.name}>"
         if isinstance(value, BuiltinFunction):
@@ -181,99 +289,16 @@ class Interpreter:
         value = None if node.value is None else self.evaluate(node.value, env)
         raise ReturnSignal(value, node)
 
-    def exec_Try(self, node, env):
-        try:
-            self.exec_block(node.body, env)
-        except Exception as e:
-            caught = False
-            for handler in node.handlers:
-                if self._match_exception(e, handler, env):
-                    caught = True
-                    break
-            if not caught:
-                raise
-        finally:
-            if node.finalbody:
-                self.exec_block(node.finalbody, env)
-
-    def _match_exception(self, exc, handler, env):
-        # Check if exception type matches
-        if handler.type is not None:
-            exc_type_val = self.evaluate(handler.type, env)
-            # Handle NativaClass as exception type
-            if isinstance(exc_type_val, NativaClass):
-                # Check if exc is NativaException wrapping matching instance
-                if isinstance(exc, NativaException):
-                    if not isinstance(exc.args[0], NativaInstance):
-                        return False
-                    if not self._is_instance_of(exc.args[0], exc_type_val):
-                        return False
-                else:
-                    return False
-            elif isinstance(exc_type_val, type):
-                if not isinstance(exc, exc_type_val):
-                    return False
-            else:
-                raise self.error(handler.type, "tipo de exceção inválido")
-        # Bind exception to variable if specified
-        if handler.name is not None:
-            env.define(handler.name, self._wrap_exception(exc))
-        # Execute handler body
-        try:
-            self.exec_block(handler.body, env)
-        except (BreakSignal, ContinueSignal, ReturnSignal):
-            # Re-raise control flow signals
-            raise
-        return True
-
-    def _is_instance_of(self, instance, cls):
-        """Check if a NativaInstance is an instance of a NativaClass (including inheritance)."""
-        current = instance.cls
-        while current is not None:
-            if current == cls:
-                return True
-            current = current.bases[0] if current.bases else None
-        return False
-
-    def _wrap_exception(self, exc):
-        """Wrap a Python exception in a Nativa-accessible object."""
-        if isinstance(exc, NativaRuntimeError):
-            return NativaExceptionWrapper(exc, self)
-        elif isinstance(exc, NativaError):
-            return NativaExceptionWrapper(exc, self)
-        elif isinstance(exc, NativaException):
-            return NativaExceptionWrapper(exc, self)
-        else:
-            return NativaExceptionWrapper(NativaRuntimeError(str(exc), None, None, self.filename), self)
-        # Execute handler body
-        try:
-            self.exec_block(handler.body, env)
-        except (BreakSignal, ContinueSignal, ReturnSignal):
-            # Re-raise control flow signals
-            raise
-        return True
-
-    def exec_Raise(self, node, env):
-        if node.exc is None:
-            # Re-raise - not supported at top level, need context
-            raise self.error(node, "'perror' sem argumento só permitido dentro de 'xcept'")
-        exc_val = self.evaluate(node.exc, env)
-        # If it's a Nativa class instance, wrap in NativaException
-        if isinstance(exc_val, NativaInstance):
-            raise NativaException(exc_val)
-        # If it's a string, raise as runtime error
-        if isinstance(exc_val, str):
-            raise NativaRuntimeError(exc_val, node.line, node.col, self.filename)
-        # Otherwise convert to string
-        raise NativaRuntimeError(str(exc_val), node.line, node.col, self.filename)
-
     def exec_FuncDef(self, node, env):
         defaults = {}
         for param in node.params:
             if param.default is not None:
                 defaults[param.name] = self.evaluate(param.default, env)
         closure = env.parent if env.is_class else env
-        env.define(node.name, NativaFunction(node.name, node.params, node.body, closure, defaults))
+        env.define(
+            node.name,
+            NativaFunction(node.name, node.params, node.body, closure, defaults, node.is_async, self.filename),
+        )
 
     def exec_ClassDef(self, node, env):
         bases = []
@@ -285,99 +310,6 @@ class Interpreter:
         class_env = Environment(env, is_class=True)
         self.exec_block(node.body, class_env)
         env.define(node.name, NativaClass(node.name, bases, dict(class_env.vars)))
-
-    def exec_Import(self, node, env):
-        for module_name, alias in node.names:
-            # Try to load as Nativa library via impbuild first
-            try:
-                from impbuild.loader import load_library
-                loaded_lib = load_library(module_name)
-                # Wrap the loaded library's exports as a module-like object
-                nativa_module = NativaModuleWrapper(loaded_lib.exports, module_name, self)
-                name = alias if alias else module_name
-                env.define(name, nativa_module)
-                continue
-            except (ImportError, FileNotFoundError, AttributeError):
-                # Fall back to Python import
-                pass
-
-            # Try Python import
-            try:
-                module = importlib.import_module(module_name)
-            except ImportError as e:
-                raise self.error(node, f"não foi possível importar o módulo '{module_name}': {e}")
-            name = alias if alias else module_name
-            env.define(name, self._wrap_python_module(module))
-
-    def exec_ImportFrom(self, node, env):
-        module_name = node.module
-        if node.level > 0:
-            # Relative import - for now, treat as absolute
-            raise self.error(node, "importações relativas não são suportadas ainda")
-
-        # Try to load as Nativa library via impbuild first
-        loaded_lib = None
-        try:
-            from impbuild.loader import load_library
-            loaded_lib = load_library(module_name)
-        except (ImportError, FileNotFoundError, AttributeError):
-            # Fall back to Python import
-            pass
-
-        if loaded_lib is None:
-            # Try Python import
-            try:
-                module = importlib.import_module(module_name)
-            except ImportError as e:
-                raise self.error(node, f"não foi possível importar o módulo '{module_name}': {e}")
-            for name, alias in node.names:
-                if not hasattr(module, name):
-                    raise self.error(node, f"o módulo '{module_name}' não possui o atributo '{name}'")
-                value = getattr(module, name)
-                wrapped = self._wrap_python_value(value)
-                env.define(alias if alias else name, wrapped)
-        else:
-            # Use Nativa library exports
-            for name, alias in node.names:
-                if name not in loaded_lib.exports:
-                    raise self.error(node, f"o módulo '{module_name}' não exporta '{name}'")
-                value = loaded_lib.exports[name]
-                wrapped = self._wrap_python_value(value)
-                env.define(alias if alias else name, wrapped)
-
-    def _wrap_python_module(self, module):
-        """Wrap a Python module as a Nativa-accessible object."""
-        return PythonModuleWrapper(module, self)
-
-    def _wrap_python_value(self, value):
-        """Convert a Python value to a Nativa-compatible value."""
-        # Handle Nativa's own types first (don't wrap them)
-        from .runtime import NativaClass, NativaFunction, NativaInstance, NativaException
-        if isinstance(value, (NativaClass, NativaFunction, NativaInstance, NativaException)):
-            return value
-
-        if value is None:
-            return None
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return value
-        if isinstance(value, str):
-            return value
-        if isinstance(value, (list, tuple)):
-            return [self._wrap_python_value(v) for v in value]
-        if isinstance(value, dict):
-            return {self._wrap_python_value(k): self._wrap_python_value(v) for k, v in value.items()}
-        if isinstance(value, range):
-            return value
-        if isinstance(value, types.FunctionType):
-            return PythonFunctionWrapper(value, self)
-        if isinstance(value, type):
-            return PythonClassWrapper(value, self)
-        if hasattr(value, '__call__'):
-            return PythonCallableWrapper(value, self)
-        # For other objects, wrap them
-        return PythonObjectWrapper(value, self)
 
     def eval_Num(self, node, env):
         return node.value
@@ -520,14 +452,12 @@ class Interpreter:
             if found is not MISSING:
                 return found
             raise self.error(node, f"a classe '{obj.name}' não possui o atributo '{name}'")
+        if isinstance(obj, NativeModule):
+            if name in obj.attrs:
+                return obj.attrs[name]
+            raise self.error(node, f"o módulo '{obj.name}' não possui o atributo '{name}'")
         if isinstance(obj, str) and name == "dr":
             return obj.strip().lower()
-        # Handle Python wrapper objects and Nativa module wrapper
-        if isinstance(obj, (PythonModuleWrapper, PythonClassWrapper, PythonObjectWrapper, PythonFunctionWrapper, PythonCallableWrapper, NativaExceptionWrapper, NativaModuleWrapper)):
-            try:
-                return getattr(obj, name)
-            except AttributeError:
-                raise self.error(node, f"objeto Python não possui o atributo '{name}'")
         allowed = METHODS.get(type(obj))
         if allowed is not None and name in allowed:
             method = getattr(obj, name)
@@ -554,38 +484,28 @@ class Interpreter:
             if name in kwargs:
                 raise self.error(expr, f"argumento '{name}' repetido")
             kwargs[name] = self.evaluate(expr, env)
-        return self.call_value(func, args, kwargs, node)
+        return self.call_value(func, args, kwargs, node, env)
 
-    def call_value(self, func, args, kwargs, node):
+    def call_value(self, func, args, kwargs, node, env=None):
         if isinstance(func, NativaFunction):
             return self.call_function(func, args, kwargs, node)
         if isinstance(func, BoundMethod):
             return self.call_function(func.func, [func.instance] + args, kwargs, node)
         if isinstance(func, BuiltinFunction):
+            if func.needs_env:
+                args = [env] + args
             try:
                 return func.fn(*args, **kwargs)
-            except NativaError:
+            except (NativaError, NativaThrow):
                 raise
             except NativaBuiltinError as e:
-                raise self.error(node, str(e))
+                raise self.error(node, str(e), e.error_class)
             except RecursionError:
                 raise
             except Exception as e:
                 raise self.error(node, f"{func.name}: {describe_exception(e)}")
         if isinstance(func, NativaClass):
             return self.instantiate(func, args, kwargs, node)
-        # Handle Python wrapper callables
-        if isinstance(func, (PythonFunctionWrapper, PythonClassWrapper, PythonCallableWrapper, PythonObjectWrapper)):
-            try:
-                return func(*args, **kwargs)
-            except NativaError:
-                raise
-            except NativaBuiltinError as e:
-                raise self.error(node, str(e))
-            except RecursionError:
-                raise
-            except Exception as e:
-                raise self.error(node, f"{func.name}: {describe_exception(e)}")
         raise self.error(node, f"valores do tipo {type_name(func)} não são chamáveis")
 
     def instantiate(self, cls, args, kwargs, node):
@@ -598,6 +518,11 @@ class Interpreter:
         return instance
 
     def call_function(self, fn, args, kwargs, node):
+        if fn.is_async:
+            return Coroutine(fn, args, kwargs, node)
+        return self.invoke(fn, args, kwargs, node)
+
+    def invoke(self, fn, args, kwargs, node):
         if self.depth >= MAX_CALL_DEPTH:
             raise self.error(node, "profundidade máxima de chamadas excedida")
         env = Environment(fn.closure)
@@ -626,6 +551,9 @@ class Interpreter:
                 else:
                     raise self.error(node, f"'{fn.name}' requer o argumento '{param.name}'")
         self.depth += 1
+        saved_file = self.filename
+        if fn.filename:
+            self.filename = fn.filename
         try:
             self.exec_block(fn.body, env)
         except ReturnSignal as signal:
@@ -635,159 +563,141 @@ class Interpreter:
             raise self.error(signal.node, f"'{word}' fora de um laço")
         finally:
             self.depth -= 1
+            self.filename = saved_file
         return None
 
+    def exec_Pass(self, node, env):
+        return None
 
-class PythonModuleWrapper:
-    """Wrapper for Python modules to make them accessible from Nativa."""
-    def __init__(self, module, interpreter):
-        self._module = module
-        self._interpreter = interpreter
-
-    def __getattr__(self, name):
-        if name.startswith('_'):
-            raise AttributeError(name)
-        value = getattr(self._module, name)
-        return self._interpreter._wrap_python_value(value)
-
-    def __dir__(self):
-        return [name for name in dir(self._module) if not name.startswith('_')]
-
-
-class PythonFunctionWrapper:
-    """Wrapper for Python functions to make them callable from Nativa."""
-    def __init__(self, func, interpreter):
-        self._func = func
-        self._interpreter = interpreter
-        self.name = getattr(func, '__name__', 'função_python')
-
-    def __call__(self, *args, **kwargs):
-        py_args = [self._unwrap_for_python(arg) for arg in args]
-        py_kwargs = {k: self._unwrap_for_python(v) for k, v in kwargs.items()}
+    def exec_Try(self, node, env):
         try:
-            result = self._func(*py_args, **py_kwargs)
-            return self._interpreter._wrap_python_value(result)
-        except Exception as e:
-            raise NativaBuiltinError(f"{self.name}: {describe_exception(e)}")
-
-    def _unwrap_for_python(self, value):
-        if isinstance(value, (NativaInstance, NativaClass, NativaFunction, BoundMethod, BuiltinFunction)):
-            return value
-        return value
-
-
-class PythonClassWrapper:
-    """Wrapper for Python classes to make them instantiable from Nativa."""
-    def __init__(self, cls, interpreter):
-        self._cls = cls
-        self._interpreter = interpreter
-        self.name = getattr(cls, '__name__', 'ClassePython')
-
-    def __call__(self, *args, **kwargs):
-        py_args = [self._unwrap_for_python(arg) for arg in args]
-        py_kwargs = {k: self._unwrap_for_python(v) for k, v in kwargs.items()}
-        try:
-            instance = self._cls(*py_args, **py_kwargs)
-            return PythonObjectWrapper(instance, self._interpreter)
-        except Exception as e:
-            raise NativaBuiltinError(f"{self.name}: {describe_exception(e)}")
-
-    def __getattr__(self, name):
-        if name.startswith('_'):
-            raise AttributeError(name)
-        value = getattr(self._cls, name)
-        return self._interpreter._wrap_python_value(value)
-
-    def _unwrap_for_python(self, value):
-        if isinstance(value, (NativaInstance, NativaClass, NativaFunction, BoundMethod, BuiltinFunction)):
-            return value
-        return value
-
-
-class PythonCallableWrapper:
-    """Wrapper for generic Python callables."""
-    def __init__(self, callable_obj, interpreter):
-        self._callable = callable_obj
-        self._interpreter = interpreter
-        self.name = getattr(callable_obj, '__name__', 'callable_python')
-
-    def __call__(self, *args, **kwargs):
-        py_args = [self._unwrap_for_python(arg) for arg in args]
-        py_kwargs = {k: self._unwrap_for_python(v) for k, v in kwargs.items()}
-        try:
-            result = self._callable(*py_args, **py_kwargs)
-            return self._interpreter._wrap_python_value(result)
-        except Exception as e:
-            raise NativaBuiltinError(f"{self.name}: {describe_exception(e)}")
-
-    def _unwrap_for_python(self, value):
-        if isinstance(value, (NativaInstance, NativaClass, NativaFunction, BoundMethod, BuiltinFunction)):
-            return value
-        return value
-
-
-class PythonObjectWrapper:
-    """Wrapper for generic Python objects."""
-    def __init__(self, obj, interpreter):
-        self._obj = obj
-        self._interpreter = interpreter
-
-    def __getattr__(self, name):
-        if name.startswith('_'):
-            raise AttributeError(name)
-        try:
-            value = getattr(self._obj, name)
-            return self._interpreter._wrap_python_value(value)
-        except AttributeError:
-            raise NativaRuntimeError(f"objeto Python não possui o atributo '{name}'", None, None, self._interpreter.filename)
-
-    def __setattr__(self, name, value):
-        if name in ('_obj', '_interpreter'):
-            super().__setattr__(name, value)
-        else:
             try:
-                if hasattr(value, '_obj'):
-                    value = value._obj
-                setattr(self._obj, name, value)
-            except Exception as e:
-                raise NativaRuntimeError(f"erro ao definir atributo '{name}': {e}", None, None, self._interpreter.filename)
+                self.exec_block(node.body, env)
+            except (NativaThrow, NativaRuntimeError, RecursionError) as caught:
+                instance = self.to_exception(caught)
+                for handler in node.handlers:
+                    if self.handler_matches(handler, instance, env):
+                        if handler.name:
+                            env.define(handler.name, instance)
+                        self.exec_block(handler.body, env)
+                        break
+                else:
+                    raise
+        finally:
+            if node.final is not None:
+                self.exec_block(node.final, env)
 
-    def __call__(self, *args, **kwargs):
-        py_args = [self._unwrap_for_python(arg) for arg in args]
-        py_kwargs = {k: self._unwrap_for_python(v) for k, v in kwargs.items()}
+    def handler_matches(self, handler, instance, env):
+        if not handler.types:
+            return True
+        for expr in handler.types:
+            cls = self.evaluate(expr, env)
+            if not isinstance(cls, NativaClass):
+                raise self.error(expr, "'xcept' requer uma classe de exceção")
+            if inherits(instance.cls, cls):
+                return True
+        return False
+
+    def exec_Perror(self, node, env):
+        value = self.evaluate(node.value, env)
+        base = self.builtins.lookup("Exception")[1]
+        if isinstance(value, NativaClass) and inherits(value, base):
+            value = self.instantiate(value, [], {}, node)
+        if not (isinstance(value, NativaInstance) and inherits(value.cls, base)):
+            raise self.error(node, "'perror' requer uma exceção (instância de Exception)")
+        value.fields.setdefault("line", node.line)
+        value.fields.setdefault("col", node.col)
+        raise NativaThrow(value, node)
+
+    def exec_Verf(self, node, env):
+        if not self.evaluate(node.test, env):
+            message = "verificação falhou"
+            if node.message is not None:
+                message = self.to_str(self.evaluate(node.message, env))
+            self.throw("AssertionError", message, node)
+
+    def exec_Del(self, node, env):
+        for target in node.targets:
+            if isinstance(target, A.Name):
+                if not env.remove(target.id):
+                    raise self.error(target, f"nome '{target.id}' não está definido")
+            elif isinstance(target, A.Attr):
+                obj = self.evaluate(target.obj, env)
+                if not isinstance(obj, NativaInstance) or target.name not in obj.fields:
+                    raise self.error(target, f"não há o atributo '{target.name}' para excluir")
+                del obj.fields[target.name]
+            else:
+                obj = self.evaluate(target.obj, env)
+                index = self.evaluate(target.index, env)
+                if not isinstance(obj, (list, dict)):
+                    raise self.error(target, f"valores do tipo {type_name(obj)} não aceitam exclusão por índice")
+                try:
+                    del obj[index]
+                except IndexError:
+                    raise self.error(target, f"índice {index} fora do intervalo")
+                except KeyError:
+                    raise self.error(target, f"chave {self.to_str(index, False)} não encontrada")
+                except TypeError:
+                    raise self.error(target, "chave inválida")
+
+    def exec_Glob(self, node, env):
+        if env.global_names is None:
+            env.global_names = set()
+        env.global_names.update(node.names)
+
+    def exec_Nolocal(self, node, env):
+        for name in node.names:
+            scope = env.parent
+            found = False
+            while scope is not None and not scope.is_module:
+                if name in scope.vars and not scope.is_class:
+                    found = True
+                    break
+                scope = scope.parent
+            if not found:
+                raise self.error(node, f"nolocal '{name}': nenhuma variável encontrada em escopo envolvente")
+            if env.nonlocal_names is None:
+                env.nonlocal_names = set()
+            env.nonlocal_names.add(name)
+
+    def exec_With(self, node, env):
+        self.run_with(node, 0, env)
+
+    def run_with(self, node, index, env):
+        if index == len(node.items):
+            self.exec_block(node.body, env)
+            return
+        item = node.items[index]
+        manager = self.evaluate(item.expr, env)
+        if not (
+            isinstance(manager, NativaInstance)
+            and isinstance(manager.cls.find("__enter__"), NativaFunction)
+            and isinstance(manager.cls.find("__exit__"), NativaFunction)
+        ):
+            raise self.error(item, "'wth' requer um gerenciador de contexto (com __enter__ e __exit__)")
+        enter = self.get_attr(manager, "__enter__", item)
+        leave = self.get_attr(manager, "__exit__", item)
+        value = self.call_value(enter, [], {}, item)
+        if item.name:
+            env.define(item.name, value)
         try:
-            result = self._obj(*py_args, **py_kwargs)
-            return self._interpreter._wrap_python_value(result)
-        except Exception as e:
-            raise NativaBuiltinError(f"chamada falhou: {describe_exception(e)}")
+            self.run_with(node, index + 1, env)
+        except (NativaThrow, NativaRuntimeError, RecursionError) as caught:
+            if not self.call_value(leave, [self.to_exception(caught)], {}, item):
+                raise
+        except (BreakSignal, ContinueSignal, ReturnSignal):
+            self.call_value(leave, [None], {}, item)
+            raise
+        else:
+            self.call_value(leave, [None], {}, item)
 
-    def _unwrap_for_python(self, value):
-        if isinstance(value, (NativaInstance, NativaClass, NativaFunction, BoundMethod, BuiltinFunction)):
-            return value
-        return value
+    def eval_Lambda(self, node, env):
+        defaults = {}
+        for param in node.params:
+            if param.default is not None:
+                defaults[param.name] = self.evaluate(param.default, env)
+        body = [A.Return(node.body, line=node.line, col=node.col)]
+        return NativaFunction("<afction>", node.params, body, env, defaults, False, self.filename)
 
-
-class NativaExceptionWrapper:
-    """Wrapper for exceptions to make them accessible from Nativa."""
-    def __init__(self, exc, interpreter):
-        self._exc = exc
-        self._interpreter = interpreter
-
-    def __getattr__(self, name):
-        if name == "msg":
-            return getattr(self._exc, 'message', str(self._exc))
-        if name == "message":
-            return getattr(self._exc, 'message', str(self._exc))
-        if name == "args":
-            return getattr(self._exc, 'args', ())
-        raise NativaRuntimeError(f"exceção não possui o atributo '{name}'", None, None, self._interpreter.filename)
-
-    def __str__(self):
-        # Return just the message without location info
-        msg = getattr(self._exc, 'message', str(self._exc))
-        # Remove location prefix if present (e.g., "Erro de execução em file, linha X, coluna Y: ")
-        if ": " in msg and "linha" in msg:
-            parts = msg.split(": ", 2)
-            if len(parts) >= 3:
-                return parts[2]
-        return msg
+    def eval_Await(self, node, env):
+        return self.scheduler.await_(self.evaluate(node.value, env), node)

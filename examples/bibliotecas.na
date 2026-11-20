@@ -1,0 +1,10 @@
+NA imp math
+NA imp random
+NA imp json
+
+random.seed(42)
+shw "raiz de 144:", math.sqrt(144)
+shw "pi arredondado:", round(math.pi, 4)
+sorteio = random.randint(1, 6)
+shw "dado entre 1 e 6:", sorteio >= 1 and sorteio <= 6
+shw json.dumps({"linguagem": "Nativa", "versao": 1})

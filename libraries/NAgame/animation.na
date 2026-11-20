@@ -1,79 +1,118 @@
-#NAgame.animation - Sistema de animacao#
+NA imp native.NAgame.animation as _an
+NA imp NAgame.utils as _utils
 
-classify Animacao: (
-    df __init__(urself, frames, velocidade=100, loop=True): (
+classify Animation: (
+    df __init__(urself, frames, fps, loop): (
+        urself.kind = "animation"
         urself.frames = frames
-        urself.velocidade = velocidade
+        urself.fps = fps
         urself.loop = loop
-        urself.frame_atual = 0
-        urself.tempo = 0
-        urself.terminou = False
+        urself.time = 0.0
+        urself.done = False
+        urself.playing = True
     )
 
-    df atualizar(urself, dt): (
-        se urself.terminou: (
-            ret
+    df index(urself): (
+        i = int(urself.time * urself.fps)
+        n = len(urself.frames)
+        if urself.loop: (
+            ret i % n
         )
-        urself.tempo = urself.tempo + dt * 1000
-        se urself.tempo >= urself.velocidade: (
-            urself.tempo = 0
-            urself.frame_atual = urself.frame_atual + 1
-            se urself.frame_atual >= len(urself.frames): (
-                se urself.loop: (
-                    urself.frame_atual = 0
-                ) senao: (
-                    urself.frame_atual = len(urself.frames) - 1
-                    urself.terminou = True
-                )
-            )
+        if i >= n: (
+            urself.done = True
+            ret n - 1
         )
+        ret i
     )
 
-    df get_frame(urself): (
-        se urself.frames: (
-            ret urself.frames[urself.frame_atual]
-        )
-        ret None
+    df frame(urself): (
+        ret urself.frames[urself.index()]
     )
 
-    df reiniciar(urself): (
-        urself.frame_atual = 0
-        urself.tempo = 0
-        urself.terminou = False
+    df update(urself, step): (
+        if urself.playing: (
+            urself.time = urself.time + step
+        )
+        ret True
+    )
+
+    df reset(urself): (
+        urself.time = 0.0
+        urself.done = False
+        urself.playing = True
     )
 )
 
-
-classify Animador: (
-    df __init__(urself): (
-        urself.animacoes = {}
-        urself.atual = None
+classify Timer: (
+    df __init__(urself, seconds, callback, repeat): (
+        urself.kind = "timer"
+        urself.seconds = seconds
+        urself.callback = callback
+        urself.repeat = repeat
+        urself.elapsed = 0.0
+        urself.count = 0
+        urself.done = False
     )
 
-    df add(urself, nome, animacao): (
-        urself.animacoes[nome] = animacao
-    )
-
-    df tocar(urself, nome): (
-        se nome em urself.animacoes: (
-            se urself.atual: (
-                urself.atual.reiniciar()
+    df update(urself, step): (
+        if urself.done: (
+            ret False
+        )
+        urself.elapsed = urself.elapsed + step
+        if urself.elapsed >= urself.seconds: (
+            urself.count = urself.count + 1
+            if urself.repeat: (
+                urself.elapsed = urself.elapsed - urself.seconds
             )
-            urself.atual = urself.animacoes[nome]
-            urself.atual.reiniciar()
+            else: (
+                urself.done = True
+            )
+            if urself.callback is not None: (
+                urself.callback()
+            )
         )
+        ret not urself.done
     )
 
-    df atualizar(urself, dt): (
-        se urself.atual: (
-            urself.atual.atualizar(dt)
-        )
+    df cancel(urself): (
+        urself.done = True
     )
 
-    df get_frame(urself): (
-        se urself.atual: (
-            ret urself.atual.get_frame()
-        )
-        ret None
+    df reset(urself): (
+        urself.elapsed = 0.0
+        urself.count = 0
+        urself.done = False
     )
+)
+
+df anm(frames, fps = 10, loop = True, fw = None, fh = None): (
+    if typeof(frames) == "Image": (
+        if fw is None or fh is None: (
+            perror ValueError("anm() com uma imagem requer fw e fh (tamanho de cada quadro)")
+        )
+        pieces = _an.slice_sheet(frames.handle, fw, fh)
+        items = []
+        for piece in pieces: (
+            items.append(_utils.Image(piece[0], piece[1], piece[2]))
+        )
+        frames = items
+    )
+    if typeof(frames) != "list" or len(frames) == 0: (
+        perror ValueError("anm() requer uma lista de quadros não vazia ou uma imagem com fw e fh")
+    )
+    if fps <= 0: (
+        perror ValueError("anm(): fps deve ser maior que zero")
+    )
+    animation = Animation(frames, fps, loop)
+    _utils._register_updater(animation.update)
+    ret animation
+)
+
+df tmr(seconds, callback = None, repeat = False): (
+    if seconds <= 0: (
+        perror ValueError("tmr(): o tempo deve ser maior que zero")
+    )
+    timer = Timer(seconds, callback, repeat)
+    _utils._register_updater(timer.update)
+    ret timer
 )

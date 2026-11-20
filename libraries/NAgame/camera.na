@@ -1,48 +1,83 @@
-#NAgame.camera - Sistema de camera#
+NA imp native.NAgame.camera as _cm
+NA imp native.NAgame.window as _win
+NA imp math as _math
+NA imp NAgame.utils as _utils
 
-classify Camera: (
-    df __init__(urself, largura_tela, altura_tela): (
-        urself.x = 0
-        urself.y = 0
-        urself.zoom = 1.0
-        urself.rotacao = 0
-        urself.largura_tela = largura_tela
-        urself.altura_tela = altura_tela
-        urself.alvo = None
-        urself.suavidade = 0.1
-    )
+_target = None
+_smooth = 0.1
 
-    df seguir(urself, alvo): (
-        urself.alvo = alvo
-    )
-
-    df atualizar(urself, dt): (
-        se urself.alvo: (
-            #Calcular posicao desejada (centralizar alvo)#
-            dx = (urself.alvo.x + urself.alvo.largura / 2) - urself.largura_tela / (2 * urself.zoom)
-            dy = (urself.alvo.y + urself.alvo.altura / 2) - urself.altura_tela / (2 * urself.zoom)
-
-            #Suavizar movimento#
-            urself.x = urself.x + (dx - urself.x) * urself.suavidade
-            urself.y = urself.y + (dy - urself.y) * urself.suavidade
-        )
-    )
-
-    df aplicar(urself, tela): (
-        #Aplicar transformacao da camera#
-        #Nota: implementacao completa requer backend com transformacoes#
-        pass
-    )
-
-    df mundo_para_tela(urself, x, y): (
-        ret [int((x - urself.x) * urself.zoom), int((y - urself.y) * urself.zoom)]
-    )
-
-    df tela_para_mundo(urself, x, y): (
-        ret [int(x / urself.zoom + urself.x), int(y / urself.zoom + urself.y)]
-    )
-
-    df definir_zoom(urself, zoom): (
-        urself.zoom = max(0.1, min(5.0, zoom))
-    )
+df cam(): (
+    ret _cm.get_state()
 )
+
+df campos(x = None, y = None): (
+    if x is None: (
+        state = _cm.get_state()
+        ret [state["x"], state["y"]]
+    )
+    if y is None: (
+        perror ValueError("campos() requer x e y")
+    )
+    _cm.set_pos(x, y)
+)
+
+df camzoom(zoom = None): (
+    if zoom is None: (
+        ret _cm.get_state()["zoom"]
+    )
+    _cm.set_zoom(zoom)
+)
+
+df camrot(angle = None): (
+    if angle is None: (
+        ret _cm.get_state()["rot"]
+    )
+    _cm.set_rot(angle)
+)
+
+df camfolw(target = None, smooth = 0.1): (
+    glob _target, _smooth
+    if smooth <= 0 or smooth > 1: (
+        perror ValueError("camfolw(): smooth deve estar entre 0 (exclusivo) e 1")
+    )
+    _target = target
+    _smooth = smooth
+)
+
+df folw(follower, target, speed): (
+    a = follower.center()
+    b = target.center()
+    dx = b[0] - a[0]
+    dy = b[1] - a[1]
+    distance = _math.hypot(dx, dy)
+    if distance == 0: (
+        ret 0.0
+    )
+    move = min(speed * _win.dt(), distance)
+    follower.x = follower.x + dx / distance * move
+    follower.y = follower.y + dy / distance * move
+    ret distance - move
+)
+
+df _follow(step): (
+    if _target is None: (
+        ret True
+    )
+    center = _target.center()
+    state = _cm.get_state()
+    k = 1.0
+    if _smooth < 1: (
+        k = 1 - (1 - _smooth) ** (step * 60)
+    )
+    _cm.set_pos(state["x"] + (center[0] - state["x"]) * k, state["y"] + (center[1] - state["y"]) * k)
+    ret True
+)
+
+df _reset(): (
+    glob _target
+    _target = None
+    _cm.reset()
+    _utils._register_updater(_follow)
+)
+
+_utils._register_updater(_follow)

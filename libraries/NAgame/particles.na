@@ -1,73 +1,62 @@
-#NAgame.particles - Sistema de particulas#
+NA imp native.NAgame.particles as _pt
+NA imp native.NAgame.graphics as _gfx
+NA imp math as _math
+NA imp NAgame.utils as _utils
 
-classify Particula: (
-    df __init__(urself, x, y, vx=0, vy=0, cor=[255,255,255], vida=1.0, tamanho=4): (
-        urself.x = x
-        urself.y = y
-        urself.vx = vx
-        urself.vy = vy
-        urself.cor = cor
-        urself.vida_max = vida
-        urself.vida = vida
-        urself.tamanho = tamanho
-        urself.ativa = True
+classify ParticleSystem: (
+    df __init__(urself, x, y, count, color, speed, life, size, gravity): (
+        urself.kind = "particles"
+        urself.color = color
+        urself.gravity = gravity
+        urself.particles = []
+        for i in rang(count): (
+            angle = _utils.rnd(0.0, 6.283185307179586)
+            velocity = speed * _utils.rnd(0.3, 1.0)
+            urself.particles.append([x, y, _math.cos(angle) * velocity, _math.sin(angle) * velocity, 0.0, life * _utils.rnd(0.5, 1.0), size])
+        )
     )
 
-    df atualizar(urself, dt): (
-        se nao urself.ativa: (
-            ret
+    df update(urself, step): (
+        alive = []
+        for p in urself.particles: (
+            p[4] = p[4] + step
+            if p[4] < p[5]: (
+                p[3] = p[3] + urself.gravity * step
+                p[0] = p[0] + p[2] * step
+                p[1] = p[1] + p[3] * step
+                alive.append(p)
+            )
         )
-        urself.vida = urself.vida - dt
-        se urself.vida <= 0: (
-            urself.ativa = False
-            ret
-        )
-        urself.x = urself.x + urself.vx * dt
-        urself.y = urself.y + urself.vy * dt
+        urself.particles = alive
+        ret len(alive) > 0
     )
 
-    df desenhar(urself, tela): (
-        se urself.ativa e urself.vida > 0: (
-            alpha = int(255 * (urself.vida / urself.vida_max))
-            cor_com_alpha = [urself.cor[0], urself.cor[1], urself.cor[2], alpha]
-            tela.circ(int(urself.x), int(urself.y), urself.tamanho, cor_com_alpha)
-        )
+    df render(urself, ui = False): (
+        _pt.draw_particles(urself.particles, urself.color, ui)
+    )
+
+    df auto_render(urself, step): (
+        urself.render(False)
+        ret len(urself.particles) > 0
+    )
+
+    df finished(urself): (
+        ret len(urself.particles) == 0
     )
 )
 
-
-classify EmissorParticulas: (
-    df __init__(urself, x, y): (
-        urself.x = x
-        urself.y = y
-        urself.particulas = []
-        #particulas por segundo#
-        urself.taxa = 10
-        urself.tempo_acumulado = 0
+df prt(x, y, count = 20, color = None, speed = 150, life = 1.0, size = 3, gravity = 200): (
+    if count < 0: (
+        perror ValueError("prt(): count não pode ser negativo")
     )
-
-    df emitir(urself, qtd=1, kwargs): (
-        para _ em rang(qtd): (
-            p = Particula(urself.x, urself.y, kwargs)
-            urself.particulas.append(p)
-        )
+    if life <= 0: (
+        perror ValueError("prt(): life deve ser maior que zero")
     )
-
-    df atualizar(urself, dt): (
-        #Atualizar particulas existentes#
-        novas = []
-        para p em urself.particulas: (
-            p.atualizar(dt)
-            se p.ativa: (
-                novas.append(p)
-            )
-        )
-        urself.particulas = novas
+    if color is None: (
+        color = _gfx.get_color()
     )
-
-    df desenhar(urself, tela): (
-        para p em urself.particulas: (
-            p.desenhar(tela)
-        )
-    )
+    system = ParticleSystem(x, y, count, color, speed, life, size, gravity)
+    _utils._register_updater(system.update)
+    _utils._register_overlay(system.auto_render)
+    ret system
 )

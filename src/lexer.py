@@ -13,16 +13,11 @@ EOF = "EOF"
 ACTIVE_KEYWORDS = {
     "shw", "utype", "if", "else", "while", "for", "in", "is", "and", "or",
     "not", "df", "ret", "brk", "continue", "classify", "True", "False", "None",
-    "NA", "imp", "de", "como",
-    "try", "xcept", "idgafatc", "perror", "as",
-    # Portuguese keywords
-    "se", "senao", "enquanto", "para", "em", "e", "ou", "nao",
-}
-
-PENDING_KEYWORDS = {
-    "tpvfetc", "dlt", "glob", "nolocal",
+    "try", "as", "xcept", "idgafatc", "perror", "tpvfetc", "dlt", "glob", "nolocal",
     "afction", "verf", "wth", "dsync", "dwait",
 }
+
+PENDING_KEYWORDS = set()
 
 KEYWORDS = ACTIVE_KEYWORDS | PENDING_KEYWORDS
 

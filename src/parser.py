@@ -36,10 +36,6 @@ class Parser:
         tok = self.peek(k)
         return tok.type == KEYWORD and tok.value == value
 
-    def is_kw_any(self, *values, k=0):
-        tok = self.peek(k)
-        return tok.type == KEYWORD and tok.value in values
-
     def describe(self, tok):
         if tok.type == EOF:
             return "fim do arquivo"
@@ -87,10 +83,6 @@ class Parser:
 
     def parse_block(self):
         self.expect_op(":")
-        return self._parse_block_body()
-
-    def _parse_block_body(self):
-        """Parse block body after ':' has been consumed. Expects '(' ... ')'."""
         if not self.is_op("("):
             raise self.error(f"esperado '(' para abrir o bloco, encontrado {self.describe(self.cur)}")
         opener = self.advance()
@@ -113,6 +105,8 @@ class Parser:
             handler = getattr(self, "stmt_" + tok.value, None)
             if handler is not None:
                 return handler()
+        if tok.type == NAME and tok.value == "NA" and self.peek(1).type == NAME and self.peek(1).value == "imp":
+            return self.stmt_import()
         expr = self.parse_expr()
         if self.is_op("="):
             eq = self.advance()
@@ -121,75 +115,6 @@ class Parser:
             value = self.parse_expr()
             return A.Assign(expr, value, line=tok.line, col=tok.col)
         return A.ExprStmt(expr, line=tok.line, col=tok.col)
-
-    def stmt_NA(self):
-        tok = self.advance()
-        if self.is_kw("imp"):
-            return self._parse_imp(tok)
-        elif self.is_kw("de"):
-            return self._parse_de_imp(tok)
-        else:
-            raise self.error(f"esperado 'imp' ou 'de' após 'NA', encontrado {self.describe(self.cur)}")
-
-    def _parse_imp(self, na_tok):
-        """Parse 'NA imp modulo1, modulo2 como alias, ...' - supports dotted names"""
-        self.advance()  # consume 'imp'
-        names = []
-        while True:
-            # Parse dotted module name (e.g., NAgame.graphics, os.path)
-            module_parts = []
-            name_tok = self.expect_name("nome do módulo")
-            module_parts.append(name_tok.value)
-            while self.is_op("."):
-                self.advance()
-                next_tok = self.expect_name("nome do módulo após '.'")
-                module_parts.append(next_tok.value)
-            module_name = ".".join(module_parts)
-
-            alias = None
-            if self.is_kw("como"):
-                self.advance()
-                alias_tok = self.expect_name("apelido do módulo")
-                alias = alias_tok.value
-            names.append((module_name, alias))
-            if not self.is_op(","):
-                break
-            self.advance()
-        return A.Import(names, line=na_tok.line, col=na_tok.col)
-
-    def _parse_de_imp(self, na_tok):
-        """Parse 'NA de modulo imp nome1, nome2 como alias, ...'"""
-        self.advance()  # consume 'de'
-        level = 0
-        while self.is_op("."):
-            level += 1
-            self.advance()
-        # Parse dotted module name (e.g., os.path, json.decoder)
-        module_parts = []
-        if self.cur.type == NAME:
-            module_parts.append(self.advance().value)
-            while self.is_op("."):
-                self.advance()
-                if self.cur.type != NAME:
-                    raise self.error("esperado nome após '.' no módulo")
-                module_parts.append(self.advance().value)
-        module = ".".join(module_parts)
-        if not self.is_kw("imp"):
-            raise self.error("esperado 'imp' após 'NA de modulo'")
-        self.advance()
-        names = []
-        while True:
-            name_tok = self.expect_name("nome a importar")
-            alias = None
-            if self.is_kw("como"):
-                self.advance()
-                alias_tok = self.expect_name("apelido")
-                alias = alias_tok.value
-            names.append((name_tok.value, alias))
-            if not self.is_op(","):
-                break
-            self.advance()
-        return A.ImportFrom(module, names, level, line=na_tok.line, col=na_tok.col)
 
     def stmt_shw(self):
         tok = self.advance()
@@ -218,9 +143,9 @@ class Parser:
         orelse = []
         save = self.pos
         self.skip_newlines()
-        if self.is_kw_any("else", "senao"):
+        if self.is_kw("else"):
             self.advance()
-            if self.is_kw_any("if", "se"):
+            if self.is_kw("if"):
                 orelse = [self.stmt_if()]
             else:
                 orelse = self.parse_block()
@@ -228,89 +153,27 @@ class Parser:
             self.pos = save
         return A.If(test, body, orelse, line=tok.line, col=tok.col)
 
-    stmt_se = stmt_if
-
     def stmt_while(self):
         tok = self.advance()
         test = self.parse_expr()
         body = self.parse_block()
         return A.While(test, body, line=tok.line, col=tok.col)
 
-    stmt_enquanto = stmt_while
-
     def stmt_for(self):
         tok = self.advance()
         var = self.expect_name("nome da variável do laço").value
-        if not self.is_kw_any("in", "em"):
+        if not self.is_kw("in"):
             raise self.error(f"esperado 'in', encontrado {self.describe(self.cur)}")
         self.advance()
         iterable = self.parse_expr()
         body = self.parse_block()
         return A.For(var, iterable, body, line=tok.line, col=tok.col)
 
-    stmt_para = stmt_for
-
-    def stmt_try(self):
-        """Parse 'try: ( ... ) xcept: ( ... ) idgafatc: ( ... )'"""
-        tok = self.advance()  # consume 'try'
-        body = self.parse_block()
-        handlers = []
-        finalbody = []
-        self.skip_newlines()
-        while self.is_kw("xcept"):
-            handlers.append(self.parse_except_handler())
-            self.skip_newlines()
-        if self.is_kw("idgafatc"):
-            self.advance()
-            self.expect_op(":")
-            finalbody = self._parse_block_body()
-        return A.Try(body, handlers, finalbody, line=tok.line, col=tok.col)
-
-    def parse_except_handler(self):
-        tok = self.advance()  # consume 'xcept'
-        exc_type = None
-        exc_name = None
-        # Check if there's an exception type before the ':' or 'as'
-        if not self.is_op(":") and not self.is_kw("as"):
-            # Parse exception type
-            exc_type = self.parse_expr()
-            if self.is_kw("as"):
-                self.advance()
-                name_tok = self.expect_name("nome da variável de exceção")
-                exc_name = name_tok.value
-        elif self.is_kw("as"):
-            # xcept as e: (no type, just variable)
-            self.advance()
-            name_tok = self.expect_name("nome da variável de exceção")
-            exc_name = name_tok.value
-        # Expect ':' then block
-        self.expect_op(":")
-        body = self._parse_block_body()
-        return A.ExceptHandler(exc_type, exc_name, body, line=tok.line, col=tok.col)
-
-    def stmt_xcept(self):
-        """Alias for 'except' - shouldn't be called directly"""
-        raise self.error("'xcept' deve ser usado dentro de 'try'")
-
-    def stmt_idgafatc(self):
-        """Alias for 'finally' - shouldn't be called directly"""
-        raise self.error("'idgafatc' deve ser usado dentro de 'try'")
-
-    def stmt_perror(self):
-        """Parse 'perror [expression]' - raise exception"""
-        tok = self.advance()
-        exc = None
-        if not self.at_statement_end():
-            exc = self.parse_expr()
-        return A.Raise(exc, line=tok.line, col=tok.col)
-
-    def stmt_df(self):
-        tok = self.advance()
-        name = self.expect_name("nome da função").value
-        self.expect_op("(")
+    def parse_param_list(self, closer, multiline):
         params = []
-        self.skip_newlines()
-        while not self.is_op(")"):
+        if multiline:
+            self.skip_newlines()
+        while not self.is_op(closer):
             vararg = False
             if self.is_op("*"):
                 self.advance()
@@ -327,16 +190,162 @@ class Parser:
             if params and params[-1].vararg:
                 raise self.error("o parâmetro '*' deve ser o último", ptok)
             params.append(A.Param(ptok.value, default, vararg))
-            self.skip_newlines()
+            if multiline:
+                self.skip_newlines()
             if self.is_op(","):
                 self.advance()
-                self.skip_newlines()
+                if multiline:
+                    self.skip_newlines()
             else:
                 break
-        self.skip_newlines()
+        if multiline:
+            self.skip_newlines()
+        return params
+
+    def stmt_df(self):
+        tok = self.advance()
+        name = self.expect_name("nome da função").value
+        self.expect_op("(")
+        params = self.parse_param_list(")", True)
         self.expect_op(")")
         body = self.parse_block()
         return A.FuncDef(name, params, body, line=tok.line, col=tok.col)
+
+    def stmt_dsync(self):
+        tok = self.advance()
+        if not self.is_kw("df"):
+            raise self.error(f"esperado 'df' depois de 'dsync', encontrado {self.describe(self.cur)}")
+        node = self.stmt_df()
+        node.is_async = True
+        node.line, node.col = tok.line, tok.col
+        return node
+
+    def stmt_try(self):
+        tok = self.advance()
+        body = self.parse_block()
+        handlers, final = [], None
+        while True:
+            save = self.pos
+            self.skip_newlines()
+            if self.is_kw("xcept") and final is None:
+                htok = self.advance()
+                if handlers and not handlers[-1].types:
+                    raise self.error("'xcept' sem tipo deve ser o último tratador", htok)
+                types, name = [], None
+                if not self.is_op(":"):
+                    types.append(self.parse_expr())
+                    while self.is_op(","):
+                        self.advance()
+                        types.append(self.parse_expr())
+                    if self.is_kw("as"):
+                        self.advance()
+                        name = self.expect_name("nome da variável da exceção").value
+                hbody = self.parse_block()
+                handlers.append(A.Handler(types, name, hbody, line=htok.line, col=htok.col))
+                continue
+            if self.is_kw("idgafatc") and final is None:
+                self.advance()
+                final = self.parse_block()
+                continue
+            self.pos = save
+            break
+        if not handlers and final is None:
+            raise self.error("'try' requer ao menos um 'xcept' ou 'idgafatc'", tok)
+        return A.Try(body, handlers, final, line=tok.line, col=tok.col)
+
+    def stmt_perror(self):
+        tok = self.advance()
+        if self.at_statement_end():
+            raise self.error("'perror' requer uma exceção")
+        return A.Perror(self.parse_expr(), line=tok.line, col=tok.col)
+
+    def stmt_tpvfetc(self):
+        tok = self.advance()
+        return A.Pass(line=tok.line, col=tok.col)
+
+    def stmt_dlt(self):
+        tok = self.advance()
+        targets = []
+        while True:
+            target = self.parse_expr()
+            if not isinstance(target, (A.Name, A.Attr, A.Index)):
+                raise self.error("alvo inválido para 'dlt'", tok)
+            targets.append(target)
+            if self.is_op(","):
+                self.advance()
+                continue
+            break
+        return A.Del(targets, line=tok.line, col=tok.col)
+
+    def parse_name_list(self, what):
+        names = [self.expect_name(what).value]
+        while self.is_op(","):
+            self.advance()
+            names.append(self.expect_name(what).value)
+        return names
+
+    def stmt_glob(self):
+        tok = self.advance()
+        return A.Glob(self.parse_name_list("nome da variável"), line=tok.line, col=tok.col)
+
+    def stmt_nolocal(self):
+        tok = self.advance()
+        return A.Nolocal(self.parse_name_list("nome da variável"), line=tok.line, col=tok.col)
+
+    def stmt_verf(self):
+        tok = self.advance()
+        test = self.parse_expr()
+        message = None
+        if self.is_op(","):
+            self.advance()
+            message = self.parse_expr()
+        return A.Verf(test, message, line=tok.line, col=tok.col)
+
+    def stmt_wth(self):
+        tok = self.advance()
+        items = []
+        while True:
+            itok = self.cur
+            expr = self.parse_expr()
+            name = None
+            if self.is_kw("as"):
+                self.advance()
+                name = self.expect_name("nome da variável").value
+            items.append(A.WithItem(expr, name, line=itok.line, col=itok.col))
+            if self.is_op(","):
+                self.advance()
+                continue
+            break
+        body = self.parse_block()
+        return A.With(items, body, line=tok.line, col=tok.col)
+
+    def stmt_import(self):
+        tok = self.advance()
+        self.advance()
+        items = []
+        while True:
+            first = self.expect_name("nome da biblioteca")
+            path = first.value
+            while self.is_op("."):
+                self.advance()
+                path += "." + self.expect_name("nome do submódulo").value
+            alias = None
+            if self.is_kw("as"):
+                self.advance()
+                alias = self.expect_name("apelido da biblioteca").value
+            items.append(A.ImportItem(path, alias, first.line, first.col))
+            if self.is_op(","):
+                self.advance()
+                continue
+            break
+        return A.Import(items, line=tok.line, col=tok.col)
+
+    def parse_lambda(self):
+        tok = self.advance()
+        params = self.parse_param_list(":", False)
+        self.expect_op(":")
+        body = self.parse_expr()
+        return A.Lambda(params, body, line=tok.line, col=tok.col)
 
     def stmt_ret(self):
         tok = self.advance()
@@ -371,24 +380,26 @@ class Parser:
         return A.ClassDef(name, bases, body, line=tok.line, col=tok.col)
 
     def parse_expr(self):
+        if self.is_kw("afction"):
+            return self.parse_lambda()
         return self.parse_or()
 
     def parse_or(self):
         left = self.parse_and()
-        while self.is_kw_any("or", "ou"):
+        while self.is_kw("or"):
             tok = self.advance()
             left = A.BoolOp("or", left, self.parse_and(), line=tok.line, col=tok.col)
         return left
 
     def parse_and(self):
         left = self.parse_not()
-        while self.is_kw_any("and", "e"):
+        while self.is_kw("and"):
             tok = self.advance()
             left = A.BoolOp("and", left, self.parse_not(), line=tok.line, col=tok.col)
         return left
 
     def parse_not(self):
-        if self.is_kw_any("not", "nao"):
+        if self.is_kw("not"):
             tok = self.advance()
             return A.Unary("not", self.parse_not(), line=tok.line, col=tok.col)
         return self.parse_comparison()
@@ -399,16 +410,16 @@ class Parser:
             self.advance()
             return tok.value
         if tok.type == KEYWORD:
-            if tok.value in ("in", "em"):
+            if tok.value == "in":
                 self.advance()
                 return "in"
-            if tok.value in ("not", "nao") and self.is_kw_any("in", "em", 1):
+            if tok.value == "not" and self.is_kw("in", 1):
                 self.advance()
                 self.advance()
                 return "not in"
-            if tok.value in ("is", "é"):
+            if tok.value == "is":
                 self.advance()
-                if self.is_kw_any("not", "nao"):
+                if self.is_kw("not"):
                     self.advance()
                     return "is not"
                 return "is"
@@ -443,6 +454,9 @@ class Parser:
         return left
 
     def parse_unary(self):
+        if self.is_kw("dwait"):
+            tok = self.advance()
+            return A.Await(self.parse_unary(), line=tok.line, col=tok.col)
         if self.cur.type == OP and self.cur.value in ("-", "+"):
             tok = self.advance()
             return A.Unary(tok.value, self.parse_unary(), line=tok.line, col=tok.col)
@@ -590,7 +604,6 @@ class Parser:
                     buf.append("{")
                     i += 2
                     continue
-                # Find matching }
                 depth, j, quote = 1, i + 1, None
                 while j < n and depth > 0:
                     d = s[j]
@@ -607,21 +620,12 @@ class Parser:
                 if depth != 0:
                     raise self.error("interpolação não fechada: falta '}'", tok)
                 source = s[i + 1:j - 1]
-                # Empty interpolation is always an error
                 if not source.strip():
                     raise self.error("interpolação vazia", tok)
-                # Try to parse as interpolation
-                try:
-                    if buf:
-                        parts.append("".join(buf))
-                        buf = []
-                    parts.append(self.parse_fragment(source, tok, i))
-                    i = j
-                    continue
-                except NativaSyntaxError:
-                    pass  # Fall through to literal handling
-                # Not a valid interpolation, treat entire {...} as literal
-                buf.append(s[i:j])
+                if buf:
+                    parts.append("".join(buf))
+                    buf = []
+                parts.append(self.parse_fragment(source, tok, i))
                 i = j
             elif c == "}":
                 if i + 1 < n and s[i + 1] == "}":
@@ -634,8 +638,6 @@ class Parser:
                 i += 1
         if buf:
             parts.append("".join(buf))
-        if len(parts) == 1 and isinstance(parts[0], str):
-            return A.Str(parts[0], line=tok.line, col=tok.col)
         return A.Interp(parts, line=tok.line, col=tok.col)
 
     def parse_fragment(self, source, tok, offset):

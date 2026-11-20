@@ -148,6 +148,7 @@ class FuncDef(Node):
     name: str
     params: List[Param]
     body: List[Node]
+    is_async: bool = False
 
 
 @dataclass
@@ -173,31 +174,81 @@ class ClassDef(Node):
 
 
 @dataclass
-class Import(Node):
-    names: List[Tuple[str, Optional[str]]]  # (module_name, alias)
-
-
-@dataclass
-class ImportFrom(Node):
-    module: str
-    names: List[Tuple[str, Optional[str]]]  # (name, alias)
-    level: int = 0
+class Handler(Node):
+    types: List[Node]
+    name: Optional[str]
+    body: List[Node]
 
 
 @dataclass
 class Try(Node):
     body: List[Node]
-    handlers: List['ExceptHandler']
-    finalbody: List[Node]
+    handlers: List[Handler]
+    final: Optional[List[Node]]
 
 
 @dataclass
-class ExceptHandler(Node):
-    type: Optional[Node]  # exception type to catch (None = catch all)
-    name: Optional[str]   # variable name to bind exception
+class Perror(Node):
+    value: Node
+
+
+@dataclass
+class Pass(Node):
+    pass
+
+
+@dataclass
+class Del(Node):
+    targets: List[Node]
+
+
+@dataclass
+class Glob(Node):
+    names: List[str]
+
+
+@dataclass
+class Nolocal(Node):
+    names: List[str]
+
+
+@dataclass
+class Verf(Node):
+    test: Node
+    message: Optional[Node]
+
+
+@dataclass
+class WithItem(Node):
+    expr: Node
+    name: Optional[str]
+
+
+@dataclass
+class With(Node):
+    items: List[WithItem]
     body: List[Node]
 
 
 @dataclass
-class Raise(Node):
-    exc: Optional[Node]  # exception to raise (None = re-raise)
+class Lambda(Node):
+    params: List[Param]
+    body: Node
+
+
+@dataclass
+class Await(Node):
+    value: Node
+
+
+@dataclass
+class ImportItem:
+    path: str
+    alias: Optional[str]
+    line: int
+    col: int
+
+
+@dataclass
+class Import(Node):
+    items: List[ImportItem]

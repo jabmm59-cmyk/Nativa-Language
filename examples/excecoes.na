@@ -1,0 +1,36 @@
+classify SaldoInsuficiente(Exception): (
+    df __init__(urself, faltam): (
+        urself.faltam = faltam
+        urself.message = "faltam {faltam} reais"
+    )
+)
+
+df sacar(saldo, valor): (
+    verf valor > 0, "o valor deve ser positivo"
+    if valor > saldo: (
+        perror SaldoInsuficiente(valor - saldo)
+    )
+    ret saldo - valor
+)
+
+for valor in [30, 500, -5, 0]: (
+    try: (
+        shw "saldo:", sacar(100, valor)
+    )
+    xcept SaldoInsuficiente as erro: (
+        shw "erro:", erro, "({erro.faltam})"
+    )
+    xcept AssertionError as erro: (
+        shw "invalido:", erro
+    )
+    idgafatc: (
+        shw "operacao", valor, "encerrada"
+    )
+)
+
+try: (
+    shw 10 / 0
+)
+xcept ZeroDivisionError, TypeError: (
+    shw "divisao por zero capturada"
+)
